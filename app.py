@@ -60,8 +60,9 @@ Suggested Exit: {info['exit']}"""
         return str(response)
 
     if message.lower().startswith("stock:"):
-        query = message[6:].strip().upper()
-        match = get_close_matches(query, all_names, n=1, cutoff=0.5)
+        query = ' '.join(message[6:].strip().upper().split())
+        print(f"User Query: {query}")
+        match = get_close_matches(query, all_names, n=1, cutoff=0.4)
 
         if match:
             matched = match[0]
