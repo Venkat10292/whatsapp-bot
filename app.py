@@ -61,12 +61,11 @@ Suggested Exit: {info['exit']}"""
 
     if message.lower().startswith("stock:"):
         query = ' '.join(message[6:].strip().upper().split())
-        print(f"User Query: {query}")
         match = get_close_matches(query, all_names, n=1, cutoff=0.4)
 
         if match:
             matched = match[0]
-            row = df[(df['Symbol'].str.upper() == matched) | (df['Company Name'].str.upper() == matched)]
+            row = df[df['Symbol'].str.upper().str.contains(matched) | df['Company Name'].str.upper().str.contains(matched)]
 
             if not row.empty:
                 symbol = row['Symbol'].values[0].upper()
