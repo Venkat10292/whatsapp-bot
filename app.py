@@ -2,6 +2,7 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from difflib import get_close_matches
 import pandas as pd
+import re
 
 app = Flask(__name__)
 
@@ -18,13 +19,47 @@ def load_stock_data():
             df = pd.read_csv(STOCKS_CSV_URL)
 
             # Normalize and prepare
-            df['Symbol'] = df['Symbol'].astype(str)
-            df['Company Name'] = df['Company Name'].astype(str)
-            stock_dict.update(dict(zip(df['Symbol'].str.upper(), df['Company Name'])))
-            all_names.extend(df['Symbol'].str.lower().str.strip())
-            all_names.extend(df['Company Name'].str.lower().str.strip())
+            df['Symbol'] = df['Symbol'].astype(str).str.upper().str.strip()
+            df['Company Name'] = df['Company Name'].astype(str).str.strip()
+            
+            # Create a dictionary with both symbols and company names as keys
+            stock_dict = {}
+            for _, row in df.iterrows():
+                stock_dict[row['Symbol'].lower()] = row['Company Name']
+                stock_dict[row['Company Name'].lower()] = row['Symbol']
+            
+            # Prepare all names for matching
+            all_names = list(stock_dict.keys())
+            
         except Exception as e:
             print(f"❌ Error loading stock data: {e}")
+
+def clean_query(query):
+    """Clean and normalize the search query"""
+    query = query.lower().strip()
+    # Remove common words that might interfere with matching
+    query = re.sub(r'\b(?:stock|of|the|and|limited|ltd|co|corporation)\b', '', query)
+    return ' '.join(query.split())
+
+def find_stock_match(query):
+    """Find the best stock match for the query"""
+    query = clean_query(query)
+    
+    # First try exact matches
+    if query in stock_dict:
+        return stock_dict[query]
+    
+    # Then try close matches
+    matches = get_close_matches(query, all_names, n=1, cutoff=0.4)
+    if matches:
+        return stock_dict[matches[0]]
+    
+    # If no close matches, try partial matching
+    for name in all_names:
+        if query in name or name in query:
+            return stock_dict[name]
+    
+    return None
 
 # Mock price lookup (replace with real API later)
 def get_stock_info(symbol):
@@ -69,25 +104,22 @@ Suggested Exit: {info['exit']}"""
 
     # Step 2: Handle stock lookup
     if message.lower().startswith("stock:"):
-        query = ' '.join(message[6:].strip().lower().split())
-        match = get_close_matches(query, all_names, n=1, cutoff=0.4)
-
-        if match:
-            matched = match[0]
-            row = df[df['Symbol'].str.lower().str.strip() == matched]  # exact symbol
-            if row.empty:
-                row = df[df['Company Name'].str.lower().str.strip() == matched]  # exact company
-            if row.empty:
-                row = df[df['Symbol'].str.lower().str.strip().str.contains(matched) |
-                         df['Company Name'].str.lower().str.strip().str.contains(matched)]
-
-            if not row.empty:
-                symbol = row.iloc[0]['Symbol'].upper()
-                company = row.iloc[0]['Company Name']
-                user_sessions[sender] = {"suggested": symbol, "awaiting_confirmation": True}
-                reply = f"Did you mean: {company} ({symbol})? Reply 'yes' to continue or type a new stock name."
+        query = message[6:].strip()
+        symbol_or_name = find_stock_match(query)
+        
+        if symbol_or_name:
+            # Determine if we got a symbol or company name
+            if symbol_or_name in df['Symbol'].values:
+                # We got a company name, find the symbol
+                symbol = symbol_or_name
+                company = df[df['Symbol'] == symbol_or_name]['Company Name'].values[0]
             else:
-                reply = "⚠️ Found a match but couldn't extract stock details. Please try again."
+                # We got a symbol, find the company name
+                company = symbol_or_name
+                symbol = df[df['Company Name'] == symbol_or_name]['Symbol'].values[0]
+                
+            user_sessions[sender] = {"suggested": symbol, "awaiting_confirmation": True}
+            reply = f"Did you mean: {company} ({symbol})? Reply 'yes' to continue or type a new stock name."
         else:
             reply = "❓ Couldn't find a match. Please try again with a valid stock name or symbol (e.g., stock: INFY)"
     else:
