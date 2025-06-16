@@ -5,15 +5,23 @@ import pandas as pd
 
 app = Flask(__name__)
 
-# Load stock data from GitHub
-STOCKS_CSV_URL = "https://raw.githubusercontent.com/Venkat10292/whatsapp-bot/main/nse_stocks.csv"
-df = pd.read_csv(STOCKS_CSV_URL)
+# Load once and cache
+df = None
+stock_dict = {}
+all_names = []
 
-# Create search lists
-stock_dict = dict(zip(df['Symbol'].str.upper(), df['Company Name']))
-all_names = list(df['Company Name'].str.upper()) + list(df['Symbol'].str.upper())
+def load_stock_data():
+    global df, stock_dict, all_names
+    if df is None:
+        try:
+            STOCKS_CSV_URL = "https://raw.githubusercontent.com/Venkat10292/whatsapp-bot/main/nse_stocks.csv"
+            df = pd.read_csv(STOCKS_CSV_URL)
+            stock_dict = dict(zip(df['Symbol'].str.upper(), df['Company Name']))
+            all_names = list(df['Company Name'].str.upper()) + list(df['Symbol'].str.upper())
+        except Exception as e:
+            print(f"Error loading stock data: {e}")
 
-# Mock price lookup (replace with real API later)
+# Mock price lookup
 def get_stock_info(symbol):
     return {
         "price": "₹18.74",
@@ -23,18 +31,17 @@ def get_stock_info(symbol):
         "exit": "₹19.68"
     }
 
-# Store temporary user sessions
 user_sessions = {}
 
 @app.route("/incoming", methods=['POST'])
 def incoming_message():
+    load_stock_data()
     message = request.form.get('Body').strip()
     sender = request.form.get('From')
     response = MessagingResponse()
 
     session = user_sessions.get(sender, {})
 
-    # Step 1: Handle confirmation
     if session.get("awaiting_confirmation"):
         if message.lower() == "yes":
             symbol = session["suggested"]
@@ -52,7 +59,6 @@ Suggested Exit: {info['exit']}"""
         response.message(reply)
         return str(response)
 
-    # Step 2: Normal query flow
     if message.lower().startswith("stock:"):
         query = message[6:].strip().upper()
         match = get_close_matches(query, all_names, n=1, cutoff=0.5)
@@ -67,7 +73,7 @@ Suggested Exit: {info['exit']}"""
                 user_sessions[sender] = {"suggested": symbol, "awaiting_confirmation": True}
                 reply = f"Did you mean: {company} ({symbol})? Reply 'yes' to continue or type a new stock name."
             else:
-                reply = "Found a match but couldn’t extract stock details. Try again."
+                reply = "⚠️ Found a match but couldn’t extract stock details. Try again."
         else:
             reply = "❓ Couldn't find a match. Please try again with a valid stock name or symbol (e.g., stock: INFY)"
     else:
@@ -75,7 +81,6 @@ Suggested Exit: {info['exit']}"""
 
     response.message(reply)
     return str(response)
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
