@@ -1,28 +1,19 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from difflib import get_close_matches
-import csv
-import requests
+import pandas as pd
 
 app = Flask(__name__)
 
-# Load stock symbols and names from CSV (modify path if needed)
-def load_stock_data():
-    url = "https://raw.githubusercontent.com/Venkat10292/whatsapp-bot/main/nse_stocks.csv"
-    response = requests.get(url)
-    lines = response.text.strip().split('\n')
-    reader = csv.DictReader(lines)
-    stocks = {}
-    for row in reader:
-        symbol = row['SYMBOL'].strip().upper()
-        name = row['NAME'].strip().upper()
-        stocks[symbol] = name
-    return stocks
+# Load stock data from GitHub
+STOCKS_CSV_URL = "https://raw.githubusercontent.com/Venkat10292/whatsapp-bot/main/nse_stocks.csv"
+df = pd.read_csv(STOCKS_CSV_URL)
 
-stock_dict = load_stock_data()
-user_sessions = {}
+# Create search lists
+stock_dict = dict(zip(df['Symbol'].str.upper(), df['Company Name']))
+all_names = list(df['Company Name'].str.upper()) + list(df['Symbol'].str.upper())
 
-# Mock API for stock info (replace with real API if available)
+# Mock price lookup (replace with real API later)
 def get_stock_info(symbol):
     return {
         "price": "₹18.74",
@@ -32,14 +23,18 @@ def get_stock_info(symbol):
         "exit": "₹19.68"
     }
 
+# Store temporary user sessions
+user_sessions = {}
+
 @app.route("/incoming", methods=['POST'])
 def incoming_message():
     message = request.form.get('Body').strip()
     sender = request.form.get('From')
     response = MessagingResponse()
+
     session = user_sessions.get(sender, {})
 
-    # Handle user confirmation
+    # Step 1: Handle confirmation
     if session.get("awaiting_confirmation"):
         if message.lower() == "yes":
             symbol = session["suggested"]
@@ -52,39 +47,35 @@ Suggested Entry: {info['entry']}
 Suggested Exit: {info['exit']}"""
             user_sessions.pop(sender, None)
         else:
+            reply = "❌ Please retype the correct stock name (e.g., stock: TCS)"
             user_sessions.pop(sender, None)
-            reply = "Please retype the correct stock name (e.g., stock: TCS)"
         response.message(reply)
         return str(response)
 
-    # New stock request
+    # Step 2: Normal query flow
     if message.lower().startswith("stock:"):
         query = message[6:].strip().upper()
+        match = get_close_matches(query, all_names, n=1, cutoff=0.5)
 
-        # Direct symbol match
-        if query in stock_dict:
-            suggested = query
-            company = stock_dict[suggested].title()
-            user_sessions[sender] = {"suggested": suggested, "awaiting_confirmation": True}
-            reply = f"Did you mean: {company} ({suggested})? Reply 'yes' to continue or type a new stock name."
+        if match:
+            matched = match[0]
+            row = df[(df['Symbol'].str.upper() == matched) | (df['Company Name'].str.upper() == matched)]
 
-        else:
-            # Fuzzy match on names
-            match = get_close_matches(query, stock_dict.values(), n=1, cutoff=0.5)
-            if match:
-                matched_name = match[0]
-                # Reverse lookup
-                suggested = [symbol for symbol, name in stock_dict.items() if name == matched_name][0]
-                company = stock_dict[suggested].title()
-                user_sessions[sender] = {"suggested": suggested, "awaiting_confirmation": True}
-                reply = f"Did you mean: {company} ({suggested})? Reply 'yes' to continue or type a new stock name."
+            if not row.empty:
+                symbol = row['Symbol'].values[0].upper()
+                company = row['Company Name'].values[0]
+                user_sessions[sender] = {"suggested": symbol, "awaiting_confirmation": True}
+                reply = f"Did you mean: {company} ({symbol})? Reply 'yes' to continue or type a new stock name."
             else:
-                reply = "Couldn't find a match. Please try again with a valid stock name or symbol (e.g., stock: INFY)"
+                reply = "Found a match but couldn’t extract stock details. Try again."
+        else:
+            reply = "❓ Couldn't find a match. Please try again with a valid stock name or symbol (e.g., stock: INFY)"
     else:
         reply = "Hi! To get stock info, send: stock: <company name or symbol>"
 
     response.message(reply)
     return str(response)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
