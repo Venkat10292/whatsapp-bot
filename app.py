@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # Load stock symbols and names from CSV (modify path if needed)
 def load_stock_data():
-    url = "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/main/nse_stocks.csv"
+    url = "https://raw.githubusercontent.com/Venkat10292/whatsapp-bot/main/nse_stocks.csv"
     response = requests.get(url)
     lines = response.text.strip().split('\n')
     reader = csv.DictReader(lines)
