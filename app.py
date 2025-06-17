@@ -25,7 +25,7 @@ user_states = {}
 
 @app.route("/")
 def home():
-    return "WhatsApp Stock Bot is live 🚀"
+    return "WhatsApp Stock Bot is live now🚀"
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
