@@ -93,7 +93,7 @@ def whatsapp_bot():
                 logging.info(f"Chart generated: {chart_path}")
 
                 # Send chart
-                msg.media(f"https://your-railway-subdomain.up.railway.app/static/{symbol}_chart.png")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
             else:
                 response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
