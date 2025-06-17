@@ -7,7 +7,7 @@ import yfinance as yf
 app = Flask(__name__)
 
 # Load your stock CSV (example columns: 'Name', 'Symbol')
-df = pd.read_csv("indian_stocks.csv")
+df = pd.read_csv("nse_stocks.csv")
 stock_dict = dict(zip(df["Name"].str.lower(), df["Symbol"]))
 
 @app.route("/bot", methods=["POST"])
