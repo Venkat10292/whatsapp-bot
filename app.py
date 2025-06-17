@@ -40,7 +40,7 @@ def whatsapp_bot():
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
-            "What can I help you with?\n\n"
+            "What can I help you with today?\n\n"
             "1️⃣ Stock Analysis 📈\n"
             "2️⃣ Application Support ⚙️\n\n"
             "Please reply with 1 or 2."
