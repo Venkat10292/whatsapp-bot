@@ -5,22 +5,20 @@ from difflib import get_close_matches
 import yfinance as yf
 import mplfinance as mpf
 import os
-from datetime import datetime
+import logging
 
 app = Flask(__name__)
 
-# Ensure static directory exists
-os.makedirs("static", exist_ok=True)
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Load and normalize the CSV
-try:
-    df = pd.read_csv("nse_stocks.csv")
-    df.columns = df.columns.str.strip().str.upper()  # Normalize column headers
-    symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
-    name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
-except Exception as e:
-    print("Error loading CSV:", e)
-    symbol_to_name, name_to_symbol = {}, {}
+df = pd.read_csv("nse_stocks.csv")
+df.columns = df.columns.str.strip().str.upper()
+
+# Build lookup dictionaries
+symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
+name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
 
 # Track user states
 user_states = {}
@@ -31,16 +29,14 @@ def home():
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
-    print("DEBUG: Incoming request received")
-    print("DEBUG: request.form =>", dict(request.form))
-
     sender = request.form.get("From", "unknown")
     user_msg = request.form.get("Body", "").strip()
     user_state = user_states.get(sender, "initial")
 
+    logging.info(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
+
     response = MessagingResponse()
 
-    # Handle greetings
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
@@ -65,9 +61,9 @@ def whatsapp_bot():
             response.message("❗ Invalid choice. Please reply with 1 or 2.")
             return str(response)
 
-    # Determine symbol
     symbol = None
     company_name = None
+
     if user_msg.upper() in symbol_to_name:
         symbol = user_msg.upper()
         company_name = symbol_to_name[symbol]
@@ -83,37 +79,39 @@ def whatsapp_bot():
             stock = yf.Ticker(symbol + ".NS")
             price = stock.info.get("regularMarketPrice", None)
 
-            # Download last 120 daily candles
-            hist = stock.history(period="6mo")
-            hist = hist.tail(120)
+            if price:
+                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}")
 
-            if hist.empty:
-                response.message(f"ℹ️ {company_name} ({symbol}) data not available.")
-                return str(response)
+                # Create chart
+                hist = stock.history(period="6mo")
+                chart_path = f"static/{symbol}_chart.png"
 
-            # Generate candlestick chart
-            image_filename = f"{symbol}_chart.png"
-            image_path = os.path.join("static", image_filename)
-            mpf.plot(hist, type='candle', style='yahoo', volume=True, mav=(10, 20), savefig=image_path)
+                if not os.path.exists("static"):
+                    os.makedirs("static")
 
-            # Send price and image URL
-            domain = "https://your-railway-app-name.up.railway.app"
-            response.message(f"📈 {company_name} ({symbol}): ₹{price}")
-            response.message().media(f"{domain}/static/{image_filename}")
-            response.message("Thank you! Visit again 😊")
+                mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
+                logging.info(f"Chart generated: {chart_path}")
 
+                # Send chart
+                msg.media(f"https://your-railway-subdomain.up.railway.app/static/{symbol}_chart.png")
+            else:
+                response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
-            print("ERROR fetching stock or chart:", str(e))
-            response.message("⚠️ Something went wrong while processing your request.")
-        user_states[sender] = "initial"
-        return str(response)
+            logging.error(f"Error fetching stock price or generating chart: {e}")
+            response.message("⚠️ Could not fetch stock details or generate chart.")
 
-    # Handle fallback
-    if user_state == "stock_mode":
-        response.message("❌ Stock not found. Please enter a valid company name or symbol.")
+        user_states[sender] = "initial"
     else:
-        response.message("❌ I didn't understand that. Type 'Hi' to start over.")
+        if user_state == "stock_mode":
+            response.message("❌ Stock not found. Please enter a valid company name or symbol.")
+        else:
+            response.message("❌ Stock not found. Type 'Hi' to see the menu or enter a valid company name/symbol.")
+
     return str(response)
 
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    return send_from_directory("static", filename)
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
