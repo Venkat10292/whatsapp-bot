@@ -10,11 +10,10 @@ app = Flask(__name__)
 df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()
 
-# Create lookup dictionaries
 symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
 name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
 
-# Track each user's state
+# Track user states
 user_states = {}
 
 @app.route("/")
@@ -25,39 +24,37 @@ def home():
 def whatsapp_bot():
     sender = request.form.get("From")
     user_msg = request.form.get("Body", "").strip()
-    user_state = user_states.get(sender, "initial")
+    state = user_states.get(sender, "initial")
 
-    response = MessagingResponse()
-    reply = response.message()
+    resp = MessagingResponse()
+    reply = resp.message()
 
-    # Step 1: Greeting
-    if user_msg.lower() in ["hi", "hello"] or user_state == "initial":
+    # Greeting flow
+    if user_msg.lower() in ["hi", "hello"]:
         reply.body(
             "👋 Welcome to Stock Bot!\n"
-            "What can I help you with?\n\n"
+            "How can I help you today?\n\n"
             "1️⃣ Stock Analysis 📈\n"
             "2️⃣ Application Support ⚙️\n\n"
             "Please reply with 1 or 2."
         )
         user_states[sender] = "menu"
-        return str(response)
+        return str(resp)
 
-    # Step 2: Handle menu choice
-    if user_state == "menu":
+    # Handle menu
+    if state == "menu":
         if user_msg == "1":
             reply.body("✅ You've selected *Stock Analysis*.\nPlease enter the *company name* or *stock symbol*.")
             user_states[sender] = "awaiting_stock"
-            return str(response)
         elif user_msg == "2":
             reply.body("🔧 This feature is currently under maintenance.")
             user_states[sender] = "initial"
-            return str(response)
         else:
             reply.body("❗ Invalid choice. Please reply with 1 or 2.")
-            return str(response)
+        return str(resp)
 
-    # Step 3: Handle stock input and lookup
-    if user_state == "awaiting_stock":
+    # Handle stock analysis
+    if state == "awaiting_stock":
         symbol = None
         company_name = None
 
@@ -78,20 +75,20 @@ def whatsapp_bot():
                 if price:
                     reply.body(f"📊 {company_name} ({symbol}): ₹{price}")
                 else:
-                    reply.body(f"ℹ️ Found {company_name} ({symbol}) but price is unavailable.")
+                    reply.body(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
             except Exception as e:
-                print(f"Error fetching stock: {e}")
-                reply.body("⚠️ Could not fetch stock price.")
+                print(f"Error: {e}")
+                reply.body("⚠️ Error fetching stock price.")
         else:
-            reply.body("❌ Stock not found. Please try again with correct name or symbol.")
+            reply.body("❌ Stock not found. Please try again.")
 
         user_states[sender] = "initial"
-        return str(response)
+        return str(resp)
 
     # Fallback
     reply.body("⚠️ Please type 'Hi' to start again.")
     user_states[sender] = "initial"
-    return str(response)
+    return str(resp)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
