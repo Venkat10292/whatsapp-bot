@@ -8,14 +8,15 @@ import os
 import logging
 import base64
 import openai
+from io import BytesIO
 
 app = Flask(__name__)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set your OpenAI API Key
-openai.api_key = "your-openai-api-key"
+# Set your OpenAI API key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Load and normalize the CSV
 df = pd.read_csv("nse_stocks.csv")
@@ -31,26 +32,6 @@ user_states = {}
 @app.route("/")
 def home():
     return "WhatsApp Stock Bot is live now🚀"
-
-def analyze_chart_with_gpt(image_path, company_name, price):
-    with open(image_path, "rb") as image_file:
-        encoded_image = base64.b64encode(image_file.read()).decode()
-
-    response = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You're a technical stock market analyst. Analyze the stock chart image and give a brief summary of safe entry/exit points, current trend, and risk level."},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Analyze this chart of {company_name} (₹{price}) and provide a short insight."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
-                ]
-            }
-        ],
-        max_tokens=300
-    )
-    return response.choices[0].message.content.strip()
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
@@ -105,21 +86,55 @@ def whatsapp_bot():
             price = stock.info.get("regularMarketPrice", None)
 
             if price:
-                msg = response.message("📊 Generating stock analysis, please wait...")
+                response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating analysis, please wait...")
 
                 hist = stock.history(period="6mo")
                 chart_path = f"static/{symbol}_chart.png"
+
                 if not os.path.exists("static"):
                     os.makedirs("static")
+
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 logging.info(f"Chart generated: {chart_path}")
 
-                gpt_analysis = analyze_chart_with_gpt(chart_path, company_name, price)
+                # Encode image in base64
+                with open(chart_path, "rb") as img_file:
+                    encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
 
-                final_msg = response.message(
-                    f"📈 {company_name} ({symbol}): ₹{price}\n\n📊 *Analysis:*\n{gpt_analysis}"
+                messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a highly skilled stock market analyst. Your job is to analyze candlestick charts and provide actionable trading insights. "
+                            "Based on the chart image, give a concise summary that includes:\n"
+                            "- Current trend (bullish, bearish, or sideways)\n"
+                            "- Safe entry and exit points\n"
+                            "- Aggressive entry and exit points if visible\n"
+                            "- Identified patterns (like head and shoulders, double top, triangle, etc.)\n"
+                            "- Strong support and resistance levels\n"
+                            "- Risk level (low/medium/high)\n"
+                            "- Your final opinion: whether it's a good time to enter the trade or wait"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"Analyze this chart of {company_name} (₹{price})."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
+                        ]
+                    }
+                ]
+
+                chat_response = openai.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    max_tokens=300
                 )
-                final_msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
+
+                ai_reply = chat_response.choices[0].message.content.strip()
+
+                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
             else:
                 response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
