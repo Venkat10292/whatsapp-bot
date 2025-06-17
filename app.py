@@ -48,7 +48,7 @@ def whatsapp_bot():
         # Step 2: Handle Menu
         if user_state == "menu":
             if user_msg == "1":
-                reply.body("✅ You've selected *Stock Analysis*.\nPlease enter the *company name* or *stock symbol*.")
+                reply.body("You have selected Stock Analysis.\nPlease enter the company name or stock symbol.")
                 user_states[sender] = "awaiting_stock"
                 print(f"[DEBUG] State set to 'awaiting_stock' for {sender}")
                 return str(response)
