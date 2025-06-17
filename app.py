@@ -6,11 +6,16 @@ import yfinance as yf
 import mplfinance as mpf
 import os
 import logging
+import base64
+import openai
 
 app = Flask(__name__)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Set your OpenAI API Key
+openai.api_key = "your-openai-api-key"
 
 # Load and normalize the CSV
 df = pd.read_csv("nse_stocks.csv")
@@ -26,6 +31,26 @@ user_states = {}
 @app.route("/")
 def home():
     return "WhatsApp Stock Bot is live now🚀"
+
+def analyze_chart_with_gpt(image_path, company_name, price):
+    with open(image_path, "rb") as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode()
+
+    response = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You're a technical stock market analyst. Analyze the stock chart image and give a brief summary of safe entry/exit points, current trend, and risk level."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Analyze this chart of {company_name} (₹{price}) and provide a short insight."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
+                ]
+            }
+        ],
+        max_tokens=300
+    )
+    return response.choices[0].message.content.strip()
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
@@ -80,20 +105,21 @@ def whatsapp_bot():
             price = stock.info.get("regularMarketPrice", None)
 
             if price:
-                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}")
+                msg = response.message("📊 Generating stock analysis, please wait...")
 
-                # Create chart
                 hist = stock.history(period="6mo")
                 chart_path = f"static/{symbol}_chart.png"
-
                 if not os.path.exists("static"):
                     os.makedirs("static")
-
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 logging.info(f"Chart generated: {chart_path}")
 
-                # Send chart
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
+                gpt_analysis = analyze_chart_with_gpt(chart_path, company_name, price)
+
+                final_msg = response.message(
+                    f"📈 {company_name} ({symbol}): ₹{price}\n\n📊 *Analysis:*\n{gpt_analysis}"
+                )
+                final_msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
             else:
                 response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
