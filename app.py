@@ -24,7 +24,7 @@ def whatsapp_bot():
 
     state = user_state.get(sender, "initial")
 
-    # Allow state-based flow even if user skips "Hi"
+    # Initial Greeting
     if state == "initial":
         if user_msg.lower() in ["hi", "hello"]:
             reply.body(
@@ -36,19 +36,11 @@ def whatsapp_bot():
             )
             user_state[sender] = "menu"
             return str(response)
-        elif user_msg == "1":
-            reply.body("✅ You've selected *Stock Analysis*.\nPlease enter the stock name or symbol.")
-            user_state[sender] = "awaiting_stock"
-            return str(response)
-        elif user_msg == "2":
-            reply.body("🔧 This feature is currently under maintenance.")
-            user_state[sender] = "initial"
-            return str(response)
         else:
-            reply.body("⚠️ దయచేసి 'Hi' అని టైప్ చేయండి లేదా 1/2 ఎంపికలను ఎంచుకోండి.")
+            reply.body("⚠️ దయచేసి 'Hi' అని టైప్ చేయండి.")
             return str(response)
 
-    # Handle menu choice
+    # Menu State
     if state == "menu":
         if user_msg == "1":
             reply.body("✅ You've selected *Stock Analysis*.\nPlease enter the stock name or symbol.")
@@ -60,7 +52,7 @@ def whatsapp_bot():
             reply.body("❗ Invalid option. Please reply with 1 or 2.")
         return str(response)
 
-    # Handle stock analysis
+    # Awaiting Stock Name
     if state == "awaiting_stock":
         symbol = None
         company_name = None
@@ -83,7 +75,7 @@ def whatsapp_bot():
                     reply.body(f"📊 {company_name} ({symbol}): ₹{price}")
                 else:
                     reply.body(f"ℹ️ Found {company_name} ({symbol}) but price is unavailable.")
-            except Exception as e:
+            except Exception:
                 reply.body("⚠️ Error fetching stock price.")
         else:
             reply.body("❌ Could not find the stock. Please try again.")
@@ -93,6 +85,7 @@ def whatsapp_bot():
 
     # Fallback
     reply.body("⚠️ Please type 'Hi' to begin.")
+    user_state[sender] = "initial"
     return str(response)
 
 if __name__ == "__main__":
