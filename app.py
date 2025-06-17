@@ -23,14 +23,18 @@ def home():
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
-    sender = request.form.get("From", "unknown")
-    user_msg = request.form.get("Body", "").strip()
-    user_state = user_states.get(sender, "initial")
-    
-    print(f"Received message: {user_msg} from {sender} (state: {user_state})")
-    
-    response = MessagingResponse()
-    reply = response.message()
+    try:
+        sender = request.form.get("From", "unknown")
+        user_msg = request.form.get("Body", "").strip()
+        user_state = user_states.get(sender, "initial")
+        
+        print(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
+        print(f"All form data: {dict(request.form)}")
+        
+        response = MessagingResponse()
+        
+        # Add debug logging
+        print(f"Creating response for: {user_msg}")
     
     # Handle "Hi" or "Hello" - Show menu
     if user_msg.lower() in ["hi", "hello"]:
@@ -42,7 +46,10 @@ def whatsapp_bot():
             "Please reply with 1 or 2."
         )
         user_states[sender] = "menu"
-        return str(response)
+        print(f"Sending welcome message to {sender}")
+        print(f"Response XML: {str(response)}")
+        print(f"Final response: {str(response)}")
+    return str(response)
     
     # Handle menu choices
     if user_state == "menu":
