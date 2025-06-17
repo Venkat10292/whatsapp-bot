@@ -7,7 +7,7 @@ import yfinance as yf
 app = Flask(__name__)
 
 # Load the CSV and clean headers
-df = pd.read_csv("indian_stocks.csv")
+df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()  # Normalize headers
 
 # Create lookup dictionary
