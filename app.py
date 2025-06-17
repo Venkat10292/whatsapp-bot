@@ -9,6 +9,8 @@ import logging
 import base64
 import openai
 from io import BytesIO
+import pytesseract
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -29,6 +31,31 @@ name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYM
 # Track user states
 user_states = {}
 
+# OCR Rejection Handling Function
+def identify_rejection_reason(ocr_text):
+    ocr_text = ocr_text.lower()
+
+    anand_rathi_remarks = {
+        "signature mismatch": "Ensure the signature matches your Aadhaar exactly. Update and resubmit the form.",
+        "photo unclear": "Submit a clearer, high-quality passport photo.",
+        "document invalid": "Submit valid KYC documents like Aadhaar, PAN, or Voter ID."
+    }
+
+    rms_rules = {
+        "rms: rule don't allow market order": "Market orders are restricted. Use a limit order instead.",
+        "no holdings present": "Your account has no eligible holdings. Verify your demat balance or contact support."
+    }
+
+    for reason, solution in anand_rathi_remarks.items():
+        if reason in ocr_text:
+            return f"\U0001F4CC *Anand Rathi Rejection*: **{reason.capitalize()}**", solution
+
+    for reason, solution in rms_rules.items():
+        if reason in ocr_text:
+            return f"\U0001F4CC *System RMS Rule Triggered*: **{reason.capitalize()}**", solution
+
+    return "\u2753 Unable to identify the rejection reason clearly.", "Please upload a clearer image or contact support."
+
 @app.route("/")
 def home():
     return "WhatsApp Stock Bot is live now🚀"
@@ -37,6 +64,7 @@ def home():
 def whatsapp_bot():
     sender = request.form.get("From", "unknown")
     user_msg = request.form.get("Body", "").strip()
+    user_media_url = request.form.get("MediaUrl0")
     user_state = user_states.get(sender, "initial")
 
     logging.info(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
@@ -60,12 +88,26 @@ def whatsapp_bot():
             user_states[sender] = "stock_mode"
             return str(response)
         elif user_msg == "2":
-            response.message("🔧 This feature is currently under maintenance.")
-            user_states[sender] = "initial"
+            response.message("Please upload the rejection screenshot image.")
+            user_states[sender] = "upload_image"
             return str(response)
         else:
-            response.message("❗ Invalid choice. Please reply with 1 or 2.")
+            response.message("\u2757 Invalid choice. Please reply with 1 or 2.")
             return str(response)
+
+    if user_state == "upload_image" and user_media_url:
+        try:
+            from urllib.request import urlopen
+            img_data = urlopen(user_media_url).read()
+            image = Image.open(BytesIO(img_data))
+            text = pytesseract.image_to_string(image)
+            reason, solution = identify_rejection_reason(text)
+            response.message(f"{reason}\n\n📄 Solution:\n{solution}")
+        except Exception as e:
+            logging.error(f"OCR Error: {e}")
+            response.message("\u274c Error processing the image. Please try again.")
+        user_states[sender] = "initial"
+        return str(response)
 
     symbol = None
     company_name = None
@@ -97,7 +139,6 @@ def whatsapp_bot():
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 logging.info(f"Chart generated: {chart_path}")
 
-                # Encode image in base64
                 with open(chart_path, "rb") as img_file:
                     encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
 
@@ -139,7 +180,7 @@ def whatsapp_bot():
                 response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
             logging.error(f"Error fetching stock price or generating chart: {e}")
-            response.message("⚠️ Could not fetch stock details or generate chart.")
+            response.message("\u26a0️ Could not fetch stock details or generate chart.")
 
         user_states[sender] = "initial"
     else:
