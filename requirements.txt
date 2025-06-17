@@ -3,3 +3,5 @@ twilio
 yfinance
 mplfinance
 pandas
+python-dotenv
+openai
