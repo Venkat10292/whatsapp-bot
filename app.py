@@ -24,17 +24,29 @@ def whatsapp_bot():
 
     state = user_state.get(sender, "initial")
 
-    # Initial greeting
-    if user_msg.lower() in ["hi", "hello"] and state == "initial":
-        reply.body(
-            "👋 G. Satish చాట్‌బాట్‌కి స్వాగతం!\n"
-            "ఈ రోజు నేను మీకు ఎలా సహాయపడగలను?\n\n"
-            "1️⃣ స్టాక్ విశ్లేషణ 📈\n"
-            "2️⃣ కొనుగోలు/అమ్మకం సమస్యలు ⚙️\n\n"
-            "దయచేసి 1 లేదా 2 అని రిప్లై ఇవ్వండి."
-        )
-        user_state[sender] = "menu"
-        return str(response)
+    # Allow state-based flow even if user skips "Hi"
+    if state == "initial":
+        if user_msg.lower() in ["hi", "hello"]:
+            reply.body(
+                "👋 G. Satish చాట్‌బాట్‌కి స్వాగతం!\n"
+                "ఈ రోజు నేను మీకు ఎలా సహాయపడగలను?\n\n"
+                "1️⃣ స్టాక్ విశ్లేషణ 📈\n"
+                "2️⃣ కొనుగోలు/అమ్మకం సమస్యలు ⚙️\n\n"
+                "దయచేసి 1 లేదా 2 అని రిప్లై ఇవ్వండి."
+            )
+            user_state[sender] = "menu"
+            return str(response)
+        elif user_msg == "1":
+            reply.body("✅ You've selected *Stock Analysis*.\nPlease enter the stock name or symbol.")
+            user_state[sender] = "awaiting_stock"
+            return str(response)
+        elif user_msg == "2":
+            reply.body("🔧 This feature is currently under maintenance.")
+            user_state[sender] = "initial"
+            return str(response)
+        else:
+            reply.body("⚠️ దయచేసి 'Hi' అని టైప్ చేయండి లేదా 1/2 ఎంపికలను ఎంచుకోండి.")
+            return str(response)
 
     # Handle menu choice
     if state == "menu":
@@ -79,7 +91,7 @@ def whatsapp_bot():
         user_state[sender] = "initial"
         return str(response)
 
-    # Default fallback
+    # Fallback
     reply.body("⚠️ Please type 'Hi' to begin.")
     return str(response)
 
