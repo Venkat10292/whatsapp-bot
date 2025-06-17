@@ -25,106 +25,80 @@ def home():
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
-    print("\n--- NEW REQUEST ---")
-    print("RAW FORM DATA:", request.form)
-
     sender = request.form.get("From", "unknown")
     user_msg = request.form.get("Body", "").strip()
     user_state = user_states.get(sender, "initial")
-
-    print(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
-
+    
     response = MessagingResponse()
-
+    
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
+            "What can I help you with?\n\n"
             "1️⃣ Stock Analysis 📈\n"
             "2️⃣ Application Support ⚙️\n\n"
             "Please reply with 1 or 2."
         )
         user_states[sender] = "menu"
-        print("State changed to 'menu'")
         return str(response)
-
+    
     if user_state == "menu":
         if user_msg == "1":
-            response.message("You selected Stock Analysis. Send stock name or symbol.")
+            response.message("You have selected Stock Analysis.\nPlease enter the company name or stock symbol.")
             user_states[sender] = "stock_mode"
-            print("State changed to 'stock_mode'")
             return str(response)
         elif user_msg == "2":
-            response.message("🔧 Application Support is under maintenance.")
+            response.message("🔧 This feature is currently under maintenance.")
             user_states[sender] = "initial"
-            print("Support selected — under maintenance")
             return str(response)
         else:
-            response.message("❗ Invalid choice. Reply with 1 or 2.")
-            print("Invalid menu choice")
+            response.message("❗ Invalid choice. Please reply with 1 or 2.")
             return str(response)
 
+    # Try to match user input to stock
     symbol = None
     company_name = None
-
     if user_msg.upper() in symbol_to_name:
         symbol = user_msg.upper()
         company_name = symbol_to_name[symbol]
-        print(f"Matched SYMBOL directly: {symbol} = {company_name}")
     else:
         matches = get_close_matches(user_msg.lower(), name_to_symbol.keys(), n=1, cutoff=0.6)
         if matches:
             matched_name = matches[0]
             symbol = name_to_symbol[matched_name]
             company_name = matched_name.upper()
-            print(f"Matched NAME: {matched_name} → {symbol}")
-        else:
-            print("No match found for stock")
-
+    
     if symbol and company_name:
         try:
-            full_symbol = symbol + ".NS"
-            stock = yf.Ticker(full_symbol)
-            print(f"Fetching stock data for {full_symbol}")
+            stock = yf.Ticker(symbol + ".NS")
             price = stock.info.get("regularMarketPrice", None)
-            print(f"Market Price: ₹{price}" if price else "Price not found")
 
-            # Get last 120 daily candles
-            print("Fetching historical data...")
-            hist = stock.history(period="6mo")[-120:]
+            # Fetch last 120 daily bars
+            hist = stock.history(period="150d")[-120:]
+            if not hist.empty:
+                filename = f"{symbol}_chart.png"
+                image_path = f"static/{filename}"
+                mpf.plot(hist, type="candle", style="charles", title=f"{company_name} - Last 120 Days",
+                         ylabel="Price (INR)", volume=True, savefig=image_path)
 
-            if hist.empty:
-                raise Exception("Empty history received.")
-
-            # Save chart
-            os.makedirs("static", exist_ok=True)
-            img_path = f"static/{symbol}_chart.png"
-            print(f"Saving chart to {img_path}...")
-            mpf.plot(hist, type='candle', style='charles', volume=False, title=f'{company_name} Chart',
-                     mav=(20, 50), savefig=img_path)
-            print("Chart saved.")
-
-            if price:
-                response.message(f"📈 {company_name} ({symbol}): ₹{price}")
+                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}\nHere is the recent 120-day chart 📊")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/{image_path}")
             else:
-                response.message(f"ℹ️ {company_name} ({symbol}) found. Price unavailable.")
-
-            response.message().media(f"{request.url_root}static/{symbol}_chart.png")
-            response.message("✅ Chart generated.\nThank you! Visit again 😊")
-
+                response.message(f"ℹ️ No historical chart data available for {company_name} ({symbol}).")
         except Exception as e:
-            print(f"❌ Error: {e}")
-            response.message("⚠️ Failed to fetch stock info or chart.")
+            print(f"Error fetching data/chart: {e}")
+            response.message("⚠️ Could not fetch stock data.")
 
+        # Add closing message
+        response.message("✅ Thank you! Visit again 😊")
         user_states[sender] = "initial"
     else:
-        print("Symbol not found or invalid.")
         if user_state == "stock_mode":
-            response.message("❌ Stock not found. Try another name or symbol.")
+            response.message("❌ Stock not found. Please enter a valid company name or symbol.")
         else:
-            response.message("❌ Invalid input. Type 'Hi' to start again.")
+            response.message("❌ Stock not found. Type 'Hi' to see the menu or enter a valid company name/symbol.")
 
-    print("Final XML response:", str(response))
     return str(response)
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000)
