@@ -10,8 +10,8 @@ import pandas as pd
 from difflib import get_close_matches
 import openai
 
-from stock_analysis import fetch_stock_chart, get_ai_stock_analysis
-from ocr_utils import identify_rejection_reason
+from modules.stock_analysis import fetch_stock_chart, get_ai_stock_analysis
+from modules.ocr_utils import identify_rejection_reason
 
 app = Flask(__name__)
 
