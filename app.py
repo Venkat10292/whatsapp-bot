@@ -190,7 +190,7 @@ def whatsapp_bot():
 
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://your-deployed-url/static/{symbol}_chart.png")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
