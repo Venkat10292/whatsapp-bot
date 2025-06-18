@@ -5,3 +5,4 @@ mplfinance
 pandas
 python-dotenv
 openai
+pytesseract
