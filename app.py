@@ -48,8 +48,9 @@ REJECTION_SOLUTIONS = {
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    enhanced = cv2.threshold(gray, 130, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    denoised = cv2.medianBlur(enhanced, 3)
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+    denoised = cv2.medianBlur(thresh, 3)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     cv2.imwrite(temp_file.name, denoised)
     return temp_file.name
