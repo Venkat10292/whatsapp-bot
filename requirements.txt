@@ -6,7 +6,8 @@ pandas
 python-dotenv
 openai
 pytesseract
-gspread 
+gspread
 oauth2client
-Pillow         
+Pillow
 tesseract
+requests
