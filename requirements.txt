@@ -8,3 +8,5 @@ openai
 pytesseract
 gspread 
 oauth2client
+Pillow         
+tesseract
