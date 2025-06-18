@@ -40,11 +40,11 @@ user_states = {}
 # Google Sheets Authentication
 def get_authorized_numbers():
     try:
-        creds_dict = json.loads(os.getenv("google_sheet_credentials"))
+        creds_dict = json.loads(os.getenv("GOOGLE_SHEET_CREDENTIALS"))
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        sheet = client.open("BotAccessList").sheet1  # Change to your sheet name
+        sheet = client.open("AuthorizedUsers").sheet1
         numbers = sheet.col_values(1)
         return set(numbers)
     except Exception as e:
@@ -52,6 +52,10 @@ def get_authorized_numbers():
         return set()
 
 def is_authorized(sender):
+    if sender.startswith("whatsapp:"):
+        sender = sender.replace("whatsapp:", "").strip()
+    if sender.startswith("+91"):
+        sender = sender[3:]
     return sender in get_authorized_numbers()
 
 REJECTION_SOLUTIONS = {
@@ -67,12 +71,10 @@ def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
     if img is None:
         raise ValueError(f"Image at path '{img_path}' could not be loaded.")
-
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
     denoised = cv2.medianBlur(thresh, 3)
-
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     cv2.imwrite(temp_file.name, denoised)
     return temp_file.name
@@ -113,10 +115,10 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🚫 Access denied.\nPlease open an account with AnandRathi under *Satish Kumar G* to use this bot.")
+        response.message("🛘 Access denied.\nPlease open an account with AnandRathi under *Satish Kumar G* to use this bot.")
         return str(response)
 
-    logging.info(f"📩 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
+    logging.info(f"📬 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
 
     if media_url:
         logging.info(f"📸 Media received from {sender}: {media_url}")
@@ -161,10 +163,10 @@ def whatsapp_bot():
 
     if user_state == "menu":
         if user_msg == "1":
-            response.message("📊 Please enter a stock symbol or company name.")
+            response.message("📈 Please enter a stock symbol or company name.")
             user_states[sender] = "stock_mode"
         elif user_msg == "2":
-            response.message("📤 Upload the screenshot of your order rejection. I’ll analyze and respond.")
+            response.message("📄 Upload the screenshot of your order rejection. I’ll analyze and respond.")
             user_states[sender] = "awaiting_rejection_image"
         else:
             response.message("❗ Please type 1 or 2.")
@@ -224,7 +226,7 @@ def whatsapp_bot():
                 )
 
                 ai_reply = chat_response.choices[0].message.content.strip()
-                msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
+                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
                 msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
