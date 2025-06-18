@@ -1,5 +1,6 @@
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
+from requests.auth import HTTPBasicAuth
 import pandas as pd
 from difflib import get_close_matches
 import yfinance as yf
@@ -94,7 +95,7 @@ def whatsapp_bot():
         logging.info(f"📸 Media received from {sender}: {media_url}")
         if user_state == "awaiting_rejection_image":
             try:
-                r = requests.get(media_url)
+                r = requests.get(media_url,auth=HTTPBasicAuth(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN")))
                 if r.status_code == 200:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
                         temp.write(r.content)
