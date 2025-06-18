@@ -8,6 +8,7 @@ import os
 import logging
 import base64
 import openai
+import json
 from io import BytesIO
 import pytesseract
 from PIL import Image
@@ -32,7 +33,12 @@ user_states = {}
 
 # Google Sheets Auth Setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+google_creds_json = os.getenv("GOOGLE_SHEET_CREDENTIALS")
+if not google_creds_json:
+    raise Exception("❌ GOOGLE_SHEET_CREDENTIALS not set in environment variables.")
+
+google_creds_dict = json.loads(google_creds_json)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(google_creds_dict, scope)
 client = gspread.authorize(creds)
 sheet = client.open("AuthorizedUsers").sheet1
 
