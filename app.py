@@ -13,6 +13,8 @@ import pytesseract
 from PIL import Image
 import tempfile
 import requests
+import cv2
+import numpy as np
 
 app = Flask(__name__)
 
@@ -43,17 +45,32 @@ REJECTION_SOLUTIONS = {
     "Check T1 holdings": "This may be a T1 settlement stock or under restrictions like BE/Z/Trade-to-Trade. Check settlement cycle or try CNC mode."
 }
 
+def preprocess_image_for_ocr(img_path):
+    img = cv2.imread(img_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    enhanced = cv2.threshold(gray, 130, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    denoised = cv2.medianBlur(enhanced, 3)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    cv2.imwrite(temp_file.name, denoised)
+    return temp_file.name
+
+def detect_reason_with_fuzzy(text):
+    for reason in REJECTION_SOLUTIONS:
+        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.5)
+        if matches:
+            return reason, REJECTION_SOLUTIONS[reason]
+    return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
+
 def extract_rejection_reason(image_path):
     try:
-        img = Image.open(image_path)
-        text = pytesseract.image_to_string(img)
-        logging.info(f"Extracted text: {text}")
+        processed_path = preprocess_image_for_ocr(image_path)
+        img = Image.open(processed_path)
+        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
+        logging.info(f"OCR Extracted Text:\n{text}")
 
-        for reason in REJECTION_SOLUTIONS:
-            if reason.lower() in text.lower():
-                return reason, REJECTION_SOLUTIONS[reason]
+        reason, solution = detect_reason_with_fuzzy(text)
+        return reason, solution
 
-        return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
     except Exception as e:
         logging.error(f"OCR error: {e}")
         return None, "Failed to process image. Please send a clearer picture."
