@@ -47,7 +47,7 @@ def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
     if img is None:
         raise ValueError(f"Image at path '{img_path}' could not be loaded.")
-    
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
@@ -59,11 +59,13 @@ def preprocess_image_for_ocr(img_path):
 
 def detect_reason_with_fuzzy(text):
     logging.info(f"🔍 Full extracted OCR text:\n{text}")
-    for reason in REJECTION_SOLUTIONS:
-        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.5)
-        if matches:
-            logging.info(f"✅ Fuzzy match found: '{reason}' for input")
-            return reason, REJECTION_SOLUTIONS[reason]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines:
+        for reason in REJECTION_SOLUTIONS:
+            matches = get_close_matches(reason.lower(), [line.lower()], n=1, cutoff=0.5)
+            if matches:
+                logging.info(f"✅ Fuzzy match found: '{reason}' in line: '{line}'")
+                return reason, REJECTION_SOLUTIONS[reason]
     logging.warning("⚠️ No match found for rejection reason.")
     return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
 
@@ -95,7 +97,10 @@ def whatsapp_bot():
         logging.info(f"📸 Media received from {sender}: {media_url}")
         if user_state == "awaiting_rejection_image":
             try:
-                r = requests.get(media_url,auth=HTTPBasicAuth(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN")))
+                r = requests.get(
+                    media_url,
+                    auth=HTTPBasicAuth(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+                )
                 if r.status_code == 200:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
                         temp.write(r.content)
