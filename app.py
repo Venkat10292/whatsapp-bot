@@ -15,15 +15,17 @@ import tempfile
 import requests
 import cv2
 import numpy as np
+import uuid
 
 app = Flask(__name__)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Load OpenAI key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Load CSV and build dictionaries
+# Load CSV and build stock name dictionaries
 df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()
 symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
@@ -76,7 +78,7 @@ def extract_rejection_reason(image_path):
 
 @app.route("/")
 def home():
-    return "WhatsApp Stock Bot is live now🚀"
+    return "WhatsApp Stock Bot is live now 🚀"
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
@@ -106,11 +108,9 @@ def whatsapp_bot():
                 else:
                     logging.error(f"❌ Failed to download image. Status code: {r.status_code}")
                     response.message("⚠️ Couldn't fetch the image. Please try again.")
-
             except Exception as e:
                 logging.error(f"❌ Exception while handling image: {e}")
                 response.message("⚠️ Error analyzing the image. Please upload a clearer one.")
-            
             user_states[sender] = "initial"
             return str(response)
         else:
@@ -159,12 +159,16 @@ def whatsapp_bot():
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
                 hist = stock.history(period="6mo")
-                chart_path = f"static/{symbol}_chart.png"
 
                 if not os.path.exists("static"):
                     os.makedirs("static")
 
+                unique_id = uuid.uuid4().hex[:6]
+                chart_filename = f"{symbol}_chart_{unique_id}.png"
+                chart_path = f"static/{chart_filename}"
+
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
+
                 with open(chart_path, "rb") as img_file:
                     encoded = base64.b64encode(img_file.read()).decode("utf-8")
 
@@ -190,7 +194,7 @@ def whatsapp_bot():
 
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
