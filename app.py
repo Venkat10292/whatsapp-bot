@@ -9,6 +9,10 @@ import logging
 import base64
 import openai
 from io import BytesIO
+import pytesseract
+from PIL import Image
+import tempfile
+import requests
 
 app = Flask(__name__)
 
@@ -29,20 +33,75 @@ name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYM
 # Track user states
 user_states = {}
 
+# Known rejection reasons and solutions
+REJECTION_SOLUTIONS = {
+    "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock. Try reducing your MTF exposure or placing a CNC order instead.",
+    "Security is not allowed to trade in this market": "This security is restricted. Try trading it on a different exchange or contact support.",
+    "No holdings present": "You are trying to sell a stock you don't currently hold. Check your demat holdings before retrying.",
+    "Only board lot market orders are allowed": "Try placing your order in market lot size or convert it to a market order.",
+    "Assigned basket for entity account": "This stock is tied to a specific basket. Please verify your product type or consult with your broker.",
+    "Check T1 holdings": "This may be a T1 settlement stock or under restrictions like BE/Z/Trade-to-Trade. Check settlement cycle or try CNC mode."
+}
+
+def extract_rejection_reason(image_path):
+    try:
+        img = Image.open(image_path)
+        text = pytesseract.image_to_string(img)
+        logging.info(f"Extracted text: {text}")
+
+        for reason in REJECTION_SOLUTIONS:
+            if reason.lower() in text.lower():
+                return reason, REJECTION_SOLUTIONS[reason]
+
+        return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
+
+    except Exception as e:
+        logging.error(f"OCR error: {e}")
+        return None, "Failed to process image. Please send a clearer picture."
+
+
 @app.route("/")
 def home():
     return "WhatsApp Stock Bot is live now🚀"
+
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
     sender = request.form.get("From", "unknown")
     user_msg = request.form.get("Body", "").strip()
     user_state = user_states.get(sender, "initial")
+    media_url = request.form.get("MediaUrl0")
 
     logging.info(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
 
     response = MessagingResponse()
 
+    # If image is uploaded, process it for rejection reason
+    if media_url:
+        logging.info(f"Received media from {sender}: {media_url}")
+        try:
+            r = requests.get(media_url)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
+                temp.write(r.content)
+                temp_path = temp.name
+
+            reason, solution = extract_rejection_reason(temp_path)
+
+            if reason:
+                response.message(
+                    f"❌ *Order Rejection Reason Detected:*\n\n"
+                    f"*Reason*: {reason}\n"
+                    f"*Solution*: {solution}"
+                )
+            else:
+                response.message(solution)
+
+        except Exception as e:
+            logging.error(f"Failed to process image: {e}")
+            response.message("⚠️ Failed to analyze the rejection reason. Please try again with a clearer image.")
+        return str(response)
+
+    # Menu and stock analysis logic
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
@@ -97,7 +156,6 @@ def whatsapp_bot():
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 logging.info(f"Chart generated: {chart_path}")
 
-                # Encode image in base64
                 with open(chart_path, "rb") as img_file:
                     encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
 
@@ -140,7 +198,6 @@ def whatsapp_bot():
         except Exception as e:
             logging.error(f"Error fetching stock price or generating chart: {e}")
             response.message("⚠️ Could not fetch stock details or generate chart.")
-
         user_states[sender] = "initial"
     else:
         if user_state == "stock_mode":
