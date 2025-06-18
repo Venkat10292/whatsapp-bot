@@ -11,27 +11,39 @@ import openai
 from io import BytesIO
 import pytesseract
 from PIL import Image
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set your OpenAI API key
+# OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Load and normalize the CSV
+# Load stock CSV
 df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()
-
-# Build lookup dictionaries
 symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
 name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
 
-# Track user states
 user_states = {}
 
-# OCR Rejection Handling Function
+# Google Sheets Auth Setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open("AuthorizedUsers").sheet1
+
+def is_authorized_user(sender_number):
+    try:
+        allowed_numbers = sheet.col_values(1)  # Column A
+        return sender_number in allowed_numbers
+    except Exception as e:
+        logging.error(f"Authorization check failed: {e}")
+        return False
+
 def identify_rejection_reason(ocr_text):
     ocr_text = ocr_text.lower()
 
@@ -63,13 +75,19 @@ def home():
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
     sender = request.form.get("From", "unknown")
+
+    # ✅ Access Restriction Check
+    if not is_authorized_user(sender):
+        response = MessagingResponse()
+        response.message("⛔ You are not authorized to use this bot.")
+        return str(response)
+
     user_msg = request.form.get("Body", "").strip()
     user_media_url = request.form.get("MediaUrl0")
     user_state = user_states.get(sender, "initial")
+    response = MessagingResponse()
 
     logging.info(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
-
-    response = MessagingResponse()
 
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
@@ -137,7 +155,6 @@ def whatsapp_bot():
                     os.makedirs("static")
 
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
-                logging.info(f"Chart generated: {chart_path}")
 
                 with open(chart_path, "rb") as img_file:
                     encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
