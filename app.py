@@ -21,21 +21,16 @@ app = Flask(__name__)
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set your OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Load and normalize the CSV
+# Load CSV and build dictionaries
 df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()
-
-# Build lookup dictionaries
 symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
 name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
 
-# Track user states
 user_states = {}
 
-# Known rejection reasons and solutions
 REJECTION_SOLUTIONS = {
     "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock. Try reducing your MTF exposure or placing a CNC order instead.",
     "Security is not allowed to trade in this market": "This security is restricted. Try trading it on a different exchange or contact support.",
@@ -47,24 +42,26 @@ REJECTION_SOLUTIONS = {
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
+    if img is None:
+        raise ValueError(f"Image at path '{img_path}' could not be loaded.")
+    
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
     denoised = cv2.medianBlur(thresh, 3)
+
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     cv2.imwrite(temp_file.name, denoised)
     return temp_file.name
 
 def detect_reason_with_fuzzy(text):
-    logging.info("🔍 Starting fuzzy match checks:")
+    logging.info(f"🔍 Full extracted OCR text:\n{text}")
     for reason in REJECTION_SOLUTIONS:
-        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.4)
+        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.5)
         if matches:
-            logging.info(f"✅ Matched Reason: '{reason}'")
+            logging.info(f"✅ Fuzzy match found: '{reason}' for input")
             return reason, REJECTION_SOLUTIONS[reason]
-        else:
-            logging.info(f"❌ No match for reason: '{reason}'")
-    logging.info("⚠️ No known rejection reason matched.")
+    logging.warning("⚠️ No match found for rejection reason.")
     return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
 
 def extract_rejection_reason(image_path):
@@ -72,12 +69,7 @@ def extract_rejection_reason(image_path):
         processed_path = preprocess_image_for_ocr(image_path)
         img = Image.open(processed_path)
         text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-        
-        logging.info("🧾 OCR Extracted Text:\n" + "-"*50 + f"\n{text}\n" + "-"*50)
-        
-        reason, solution = detect_reason_with_fuzzy(text)
-        logging.info(f"🎯 Final Match: {reason if reason else 'None'}")
-        return reason, solution
+        return detect_reason_with_fuzzy(text)
     except Exception as e:
         logging.error(f"❌ OCR processing error: {e}")
         return None, "Failed to process image. Please send a clearer picture."
@@ -93,8 +85,7 @@ def whatsapp_bot():
     user_state = user_states.get(sender, "initial")
     media_url = request.form.get("MediaUrl0")
 
-    logging.info(f"Received message: '{user_msg}' from {sender} (state: {user_state})")
-
+    logging.info(f"📩 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
     response = MessagingResponse()
 
     if media_url:
@@ -102,29 +93,28 @@ def whatsapp_bot():
         if user_state == "awaiting_rejection_image":
             try:
                 r = requests.get(media_url)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
-                    temp.write(r.content)
-                    temp_path = temp.name
-
-                reason, solution = extract_rejection_reason(temp_path)
-
-                if reason:
-                    response.message(
-                        f"❌ *Order Rejection Reason Detected:*\n\n"
-                        f"*Reason*: {reason}\n"
-                        f"*Solution*: {solution}"
-                    )
+                if r.status_code == 200:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
+                        temp.write(r.content)
+                        temp_path = temp.name
+                    logging.info(f"✅ Image downloaded at: {temp_path}")
+                    reason, solution = extract_rejection_reason(temp_path)
+                    if reason:
+                        response.message(f"❌ *Order Rejection Reason:*\n\n*Reason*: {reason}\n*Solution*: {solution}")
+                    else:
+                        response.message(solution)
                 else:
-                    response.message(solution)
+                    logging.error(f"❌ Failed to download image. Status code: {r.status_code}")
+                    response.message("⚠️ Couldn't fetch the image. Please try again.")
 
             except Exception as e:
-                logging.error(f"Image processing error: {e}")
-                response.message("⚠️ Failed to analyze the rejection reason. Please try again with a clearer image.")
-
+                logging.error(f"❌ Exception while handling image: {e}")
+                response.message("⚠️ Error analyzing the image. Please upload a clearer one.")
+            
             user_states[sender] = "initial"
             return str(response)
         else:
-            response.message("ℹ️ You sent an image. To analyze a rejection, please first choose '2' from the menu.")
+            response.message("ℹ️ Image received. To analyze a rejection, type '2' first.")
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
@@ -140,19 +130,16 @@ def whatsapp_bot():
 
     if user_state == "menu":
         if user_msg == "1":
-            response.message("You have selected Stock Analysis.\nPlease enter the company name or stock symbol.")
+            response.message("📊 Please enter a stock symbol or company name.")
             user_states[sender] = "stock_mode"
-            return str(response)
         elif user_msg == "2":
-            response.message("📤 Please upload a screenshot of your order rejection message.\nI’ll analyze it and share the solution.")
+            response.message("📤 Upload the screenshot of your order rejection. I’ll analyze and respond.")
             user_states[sender] = "awaiting_rejection_image"
-            return str(response)
         else:
-            response.message("❗ Invalid choice. Please reply with 1 or 2.")
-            return str(response)
+            response.message("❗ Please type 1 or 2.")
+        return str(response)
 
-    symbol = None
-    company_name = None
+    symbol, company_name = None, None
 
     if user_msg.upper() in symbol_to_name:
         symbol = user_msg.upper()
@@ -170,8 +157,7 @@ def whatsapp_bot():
             price = stock.info.get("regularMarketPrice", None)
 
             if price:
-                response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating analysis, please wait...")
-
+                response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
                 hist = stock.history(period="6mo")
                 chart_path = f"static/{symbol}_chart.png"
 
@@ -179,56 +165,43 @@ def whatsapp_bot():
                     os.makedirs("static")
 
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
-                logging.info(f"📊 Chart generated: {chart_path}")
-
                 with open(chart_path, "rb") as img_file:
-                    encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-
-                messages = [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a highly skilled stock market analyst. Your job is to analyze candlestick charts and provide actionable trading insights. "
-                            "Based on the chart image, give a concise summary that includes:\n"
-                            "- Current trend (bullish, bearish, or sideways)\n"
-                            "- Safe entry and exit points\n"
-                            "- Aggressive entry and exit points if visible\n"
-                            "- Identified patterns\n"
-                            "- Support/resistance levels\n"
-                            "- Risk level\n"
-                            "- Final opinion"
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"Analyze this chart of {company_name} (₹{price})."},
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
-                        ]
-                    }
-                ]
+                    encoded = base64.b64encode(img_file.read()).decode("utf-8")
 
                 chat_response = openai.chat.completions.create(
                     model="gpt-4o",
-                    messages=messages,
+                    messages=[
+                        {"role": "system", "content": (
+                            "You are a skilled stock market analyst. Give:\n"
+                            "- Trend (bullish/bearish/sideways)\n"
+                            "- Entry/exit points\n"
+                            "- Patterns\n"
+                            "- Support/resistance\n"
+                            "- Risk level\n"
+                            "- Final advice (buy/sell/wait)"
+                        )},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": f"Analyze chart for {company_name} (₹{price})."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}}
+                        ]}
+                    ],
                     max_tokens=300
                 )
 
                 ai_reply = chat_response.choices[0].message.content.strip()
-
-                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{symbol}_chart.png")
+                msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
+                msg.media(f"https://your-deployed-url/static/{symbol}_chart.png")
             else:
-                response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
+                response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
-            logging.error(f"Stock analysis error: {e}")
-            response.message("⚠️ Could not fetch stock details or generate chart.")
+            logging.error(f"❌ Stock error: {e}")
+            response.message("⚠️ Couldn't retrieve stock data.")
         user_states[sender] = "initial"
     else:
         if user_state == "stock_mode":
-            response.message("❌ Stock not found. Please enter a valid company name or symbol.")
+            response.message("❌ Stock not found. Try a valid symbol or company name.")
         else:
-            response.message("❌ Stock not found. Type 'Hi' to see the menu or enter a valid company name/symbol.")
+            response.message("❌ Invalid input. Type 'Hi' to restart.")
 
     return str(response)
 
