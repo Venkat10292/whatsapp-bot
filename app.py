@@ -56,10 +56,15 @@ def preprocess_image_for_ocr(img_path):
     return temp_file.name
 
 def detect_reason_with_fuzzy(text):
+    logging.info("🔍 Starting fuzzy match checks:")
     for reason in REJECTION_SOLUTIONS:
-        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.5)
+        matches = get_close_matches(reason.lower(), [text.lower()], n=1, cutoff=0.4)
         if matches:
+            logging.info(f"✅ Matched Reason: '{reason}'")
             return reason, REJECTION_SOLUTIONS[reason]
+        else:
+            logging.info(f"❌ No match for reason: '{reason}'")
+    logging.info("⚠️ No known rejection reason matched.")
     return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
 
 def extract_rejection_reason(image_path):
@@ -67,13 +72,14 @@ def extract_rejection_reason(image_path):
         processed_path = preprocess_image_for_ocr(image_path)
         img = Image.open(processed_path)
         text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-        logging.info(f"OCR Extracted Text:\n{text}")
-
+        
+        logging.info("🧾 OCR Extracted Text:\n" + "-"*50 + f"\n{text}\n" + "-"*50)
+        
         reason, solution = detect_reason_with_fuzzy(text)
+        logging.info(f"🎯 Final Match: {reason if reason else 'None'}")
         return reason, solution
-
     except Exception as e:
-        logging.error(f"OCR error: {e}")
+        logging.error(f"❌ OCR processing error: {e}")
         return None, "Failed to process image. Please send a clearer picture."
 
 @app.route("/")
@@ -91,9 +97,8 @@ def whatsapp_bot():
 
     response = MessagingResponse()
 
-    # Handle image upload
     if media_url:
-        logging.info(f"Received media from {sender}: {media_url}")
+        logging.info(f"📸 Media received from {sender}: {media_url}")
         if user_state == "awaiting_rejection_image":
             try:
                 r = requests.get(media_url)
@@ -113,16 +118,15 @@ def whatsapp_bot():
                     response.message(solution)
 
             except Exception as e:
-                logging.error(f"Failed to process image: {e}")
+                logging.error(f"Image processing error: {e}")
                 response.message("⚠️ Failed to analyze the rejection reason. Please try again with a clearer image.")
-            
+
             user_states[sender] = "initial"
             return str(response)
         else:
             response.message("ℹ️ You sent an image. To analyze a rejection, please first choose '2' from the menu.")
             return str(response)
 
-    # Main menu
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
@@ -134,7 +138,6 @@ def whatsapp_bot():
         user_states[sender] = "menu"
         return str(response)
 
-    # Handle menu selection
     if user_state == "menu":
         if user_msg == "1":
             response.message("You have selected Stock Analysis.\nPlease enter the company name or stock symbol.")
@@ -148,7 +151,6 @@ def whatsapp_bot():
             response.message("❗ Invalid choice. Please reply with 1 or 2.")
             return str(response)
 
-    # Stock analysis
     symbol = None
     company_name = None
 
@@ -177,7 +179,7 @@ def whatsapp_bot():
                     os.makedirs("static")
 
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
-                logging.info(f"Chart generated: {chart_path}")
+                logging.info(f"📊 Chart generated: {chart_path}")
 
                 with open(chart_path, "rb") as img_file:
                     encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
@@ -191,10 +193,10 @@ def whatsapp_bot():
                             "- Current trend (bullish, bearish, or sideways)\n"
                             "- Safe entry and exit points\n"
                             "- Aggressive entry and exit points if visible\n"
-                            "- Identified patterns (like head and shoulders, double top, triangle, etc.)\n"
-                            "- Strong support and resistance levels\n"
-                            "- Risk level (low/medium/high)\n"
-                            "- Your final opinion: whether it's a good time to enter the trade or wait"
+                            "- Identified patterns\n"
+                            "- Support/resistance levels\n"
+                            "- Risk level\n"
+                            "- Final opinion"
                         )
                     },
                     {
@@ -219,7 +221,7 @@ def whatsapp_bot():
             else:
                 response.message(f"ℹ️ {company_name} ({symbol}) found, but price is unavailable.")
         except Exception as e:
-            logging.error(f"Error fetching stock price or generating chart: {e}")
+            logging.error(f"Stock analysis error: {e}")
             response.message("⚠️ Could not fetch stock details or generate chart.")
         user_states[sender] = "initial"
     else:
