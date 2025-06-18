@@ -54,16 +54,13 @@ def extract_rejection_reason(image_path):
                 return reason, REJECTION_SOLUTIONS[reason]
 
         return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
-
     except Exception as e:
         logging.error(f"OCR error: {e}")
         return None, "Failed to process image. Please send a clearer picture."
 
-
 @app.route("/")
 def home():
     return "WhatsApp Stock Bot is live now🚀"
-
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
@@ -76,32 +73,38 @@ def whatsapp_bot():
 
     response = MessagingResponse()
 
-    # If image is uploaded, process it for rejection reason
+    # Handle image upload
     if media_url:
         logging.info(f"Received media from {sender}: {media_url}")
-        try:
-            r = requests.get(media_url)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
-                temp.write(r.content)
-                temp_path = temp.name
+        if user_state == "awaiting_rejection_image":
+            try:
+                r = requests.get(media_url)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
+                    temp.write(r.content)
+                    temp_path = temp.name
 
-            reason, solution = extract_rejection_reason(temp_path)
+                reason, solution = extract_rejection_reason(temp_path)
 
-            if reason:
-                response.message(
-                    f"❌ *Order Rejection Reason Detected:*\n\n"
-                    f"*Reason*: {reason}\n"
-                    f"*Solution*: {solution}"
-                )
-            else:
-                response.message(solution)
+                if reason:
+                    response.message(
+                        f"❌ *Order Rejection Reason Detected:*\n\n"
+                        f"*Reason*: {reason}\n"
+                        f"*Solution*: {solution}"
+                    )
+                else:
+                    response.message(solution)
 
-        except Exception as e:
-            logging.error(f"Failed to process image: {e}")
-            response.message("⚠️ Failed to analyze the rejection reason. Please try again with a clearer image.")
-        return str(response)
+            except Exception as e:
+                logging.error(f"Failed to process image: {e}")
+                response.message("⚠️ Failed to analyze the rejection reason. Please try again with a clearer image.")
+            
+            user_states[sender] = "initial"
+            return str(response)
+        else:
+            response.message("ℹ️ You sent an image. To analyze a rejection, please first choose '2' from the menu.")
+            return str(response)
 
-    # Menu and stock analysis logic
+    # Main menu
     if user_msg.lower() in ["hi", "hello"]:
         response.message(
             "👋 Welcome to Stock Bot!\n"
@@ -113,19 +116,21 @@ def whatsapp_bot():
         user_states[sender] = "menu"
         return str(response)
 
+    # Handle menu selection
     if user_state == "menu":
         if user_msg == "1":
             response.message("You have selected Stock Analysis.\nPlease enter the company name or stock symbol.")
             user_states[sender] = "stock_mode"
             return str(response)
         elif user_msg == "2":
-            response.message("🔧 This feature is currently under maintenance.")
-            user_states[sender] = "initial"
+            response.message("📤 Please upload a screenshot of your order rejection message.\nI’ll analyze it and share the solution.")
+            user_states[sender] = "awaiting_rejection_image"
             return str(response)
         else:
             response.message("❗ Invalid choice. Please reply with 1 or 2.")
             return str(response)
 
+    # Stock analysis
     symbol = None
     company_name = None
 
