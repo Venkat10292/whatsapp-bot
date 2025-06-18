@@ -41,6 +41,7 @@ user_states = {}
 def get_authorized_numbers():
     try:
         creds_dict = json.loads(os.getenv("GOOGLE_SHEET_CREDENTIALS"))
+        print("ENV:", os.getenv("GOOGLE_SHEET_CREDENTIALS"))
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
