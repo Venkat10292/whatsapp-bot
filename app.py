@@ -17,6 +17,9 @@ import requests
 import cv2
 import numpy as np
 import uuid
+import gspread
+import json
+from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
@@ -33,6 +36,23 @@ symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMP
 name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
 
 user_states = {}
+
+# Google Sheets Authentication
+def get_authorized_numbers():
+    try:
+        creds_dict = json.loads(os.getenv("google_sheet_credentials"))
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("BotAccessList").sheet1  # Change to your sheet name
+        numbers = sheet.col_values(1)
+        return set(numbers)
+    except Exception as e:
+        logging.error(f"❌ Error loading Google Sheet: {e}")
+        return set()
+
+def is_authorized(sender):
+    return sender in get_authorized_numbers()
 
 REJECTION_SOLUTIONS = {
     "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock. Try reducing your MTF exposure or placing a CNC order instead.",
@@ -90,8 +110,13 @@ def whatsapp_bot():
     user_state = user_states.get(sender, "initial")
     media_url = request.form.get("MediaUrl0")
 
-    logging.info(f"📩 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
     response = MessagingResponse()
+
+    if not is_authorized(sender):
+        response.message("🚫 Access denied.\nPlease open an account with AnandRathi under *Satish Kumar G* to use this bot.")
+        return str(response)
+
+    logging.info(f"📩 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
 
     if media_url:
         logging.info(f"📸 Media received from {sender}: {media_url}")
