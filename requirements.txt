@@ -6,4 +6,5 @@ pandas
 python-dotenv
 openai
 pytesseract
-gspread oauth2client
+gspread 
+oauth2client
