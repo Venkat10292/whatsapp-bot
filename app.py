@@ -17,11 +17,12 @@ import requests
 import cv2
 import numpy as np
 import uuid
-import gspread
-import json
-from oauth2client.service_account import ServiceAccountCredentials
+from pg_db import init_db, is_user_authorized, add_user
 
 app = Flask(__name__)
+
+# Initialize DB
+init_db()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,28 +38,6 @@ name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYM
 
 user_states = {}
 
-# Google Sheets Authentication
-def get_authorized_numbers():
-    try:
-        creds_dict = json.loads(os.getenv("GOOGLE_SHEET_CREDENTIALS"))
-        print("ENV:", os.getenv("GOOGLE_SHEET_CREDENTIALS"))
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("AuthorizedUsers").sheet1
-        numbers = sheet.col_values(1)
-        return set(numbers)
-    except Exception as e:
-        logging.error(f"❌ Error loading Google Sheet: {e}")
-        return set()
-
-def is_authorized(sender):
-    if sender.startswith("whatsapp:"):
-        sender = sender.replace("whatsapp:", "").strip()
-    if sender.startswith("+91"):
-        sender = sender[3:]
-    return sender in get_authorized_numbers()
-
 REJECTION_SOLUTIONS = {
     "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock. Try reducing your MTF exposure or placing a CNC order instead.",
     "Security is not allowed to trade in this market": "This security is restricted. Try trading it on a different exchange or contact support.",
@@ -70,8 +49,6 @@ REJECTION_SOLUTIONS = {
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
-    if img is None:
-        raise ValueError(f"Image at path '{img_path}' could not be loaded.")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
@@ -81,100 +58,78 @@ def preprocess_image_for_ocr(img_path):
     return temp_file.name
 
 def detect_reason_with_fuzzy(text):
-    logging.info(f"🔍 Full extracted OCR text:\n{text}")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in lines:
         for reason in REJECTION_SOLUTIONS:
             matches = get_close_matches(reason.lower(), [line.lower()], n=1, cutoff=0.5)
             if matches:
-                logging.info(f"✅ Fuzzy match found: '{reason}' in line: '{line}'")
                 return reason, REJECTION_SOLUTIONS[reason]
-    logging.warning("⚠️ No match found for rejection reason.")
-    return None, "We couldn’t match the reason to known issues. Please contact support with the screenshot."
+    return None, "We couldn’t match the reason to known issues. Please contact support."
 
 def extract_rejection_reason(image_path):
-    try:
-        processed_path = preprocess_image_for_ocr(image_path)
-        img = Image.open(processed_path)
-        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-        return detect_reason_with_fuzzy(text)
-    except Exception as e:
-        logging.error(f"❌ OCR processing error: {e}")
-        return None, "Failed to process image. Please send a clearer picture."
+    processed_path = preprocess_image_for_ocr(image_path)
+    img = Image.open(processed_path)
+    text = pytesseract.image_to_string(img, config='--oem 3 --psm 6')
+    return detect_reason_with_fuzzy(text)
+
+def is_authorized(sender):
+    if sender.startswith("whatsapp:"):
+        sender = sender.replace("whatsapp:", "").strip()
+    if sender.startswith("+91"):
+        sender = sender[3:]
+    return is_user_authorized(sender)
 
 @app.route("/")
 def home():
-    return "WhatsApp Stock Bot is live now 🚀"
+    return "✅ WhatsApp Stock Bot is live!"
 
 @app.route("/incoming", methods=["POST"])
 def whatsapp_bot():
     sender = request.form.get("From", "unknown")
     user_msg = request.form.get("Body", "").strip()
-    user_state = user_states.get(sender, "initial")
     media_url = request.form.get("MediaUrl0")
+    user_state = user_states.get(sender, "initial")
 
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🛘 Access denied.\nPlease open an account with AnandRathi under *Satish Kumar G* to use this bot.")
+        response.message("🚫 Access denied. Please contact admin to get access.")
         return str(response)
 
-    logging.info(f"📬 Message: '{user_msg}' | State: {user_state} | Sender: {sender}")
-
     if media_url:
-        logging.info(f"📸 Media received from {sender}: {media_url}")
         if user_state == "awaiting_rejection_image":
-            try:
-                r = requests.get(
-                    media_url,
-                    auth=HTTPBasicAuth(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
-                )
-                if r.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
-                        temp.write(r.content)
-                        temp_path = temp.name
-                    logging.info(f"✅ Image downloaded at: {temp_path}")
-                    reason, solution = extract_rejection_reason(temp_path)
-                    if reason:
-                        response.message(f"❌ *Order Rejection Reason:*\n\n*Reason*: {reason}\n*Solution*: {solution}")
-                    else:
-                        response.message(solution)
-                else:
-                    logging.error(f"❌ Failed to download image. Status code: {r.status_code}")
-                    response.message("⚠️ Couldn't fetch the image. Please try again.")
-            except Exception as e:
-                logging.error(f"❌ Exception while handling image: {e}")
-                response.message("⚠️ Error analyzing the image. Please upload a clearer one.")
+            r = requests.get(media_url, auth=HTTPBasicAuth(os.getenv("TWILIO_SID"), os.getenv("TWILIO_AUTH_TOKEN")))
+            if r.status_code == 200:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
+                    temp.write(r.content)
+                    temp_path = temp.name
+                reason, solution = extract_rejection_reason(temp_path)
+                response.message(f"❌ *Reason:* {reason}\n*Solution:* {solution}")
+            else:
+                response.message("⚠️ Couldn't fetch the image. Please try again.")
             user_states[sender] = "initial"
             return str(response)
         else:
-            response.message("ℹ️ Image received. To analyze a rejection, type '2' first.")
+            response.message("📸 Image received. To analyze rejection, type '2' first.")
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message(
-            "👋 Welcome to Stock Bot!\n"
-            "What can I help you with today?\n\n"
-            "1️⃣ Stock Analysis 📈\n"
-            "2️⃣ Application Support ⚙️\n\n"
-            "Please reply with 1 or 2."
-        )
+        response.message("👋 Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
     if user_state == "menu":
         if user_msg == "1":
-            response.message("📈 Please enter a stock symbol or company name.")
+            response.message("📈 Enter stock symbol or company name.")
             user_states[sender] = "stock_mode"
         elif user_msg == "2":
-            response.message("📄 Upload the screenshot of your order rejection. I’ll analyze and respond.")
+            response.message("📷 Upload your order rejection screenshot.")
             user_states[sender] = "awaiting_rejection_image"
         else:
-            response.message("❗ Please type 1 or 2.")
+            response.message("❗ Please reply with 1 or 2.")
         return str(response)
 
     symbol, company_name = None, None
-
     if user_msg.upper() in symbol_to_name:
         symbol = user_msg.upper()
         company_name = symbol_to_name[symbol]
@@ -189,35 +144,20 @@ def whatsapp_bot():
         try:
             stock = yf.Ticker(symbol + ".NS")
             price = stock.info.get("regularMarketPrice", None)
-
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
                 hist = stock.history(period="6mo")
-
                 if not os.path.exists("static"):
                     os.makedirs("static")
-
-                unique_id = uuid.uuid4().hex[:6]
-                chart_filename = f"{symbol}_chart_{unique_id}.png"
-                chart_path = f"static/{chart_filename}"
-
+                chart_filename = f"{symbol}_{uuid.uuid4().hex[:6]}.png"
+                chart_path = os.path.join("static", chart_filename)
                 mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
-
                 with open(chart_path, "rb") as img_file:
                     encoded = base64.b64encode(img_file.read()).decode("utf-8")
-
                 chat_response = openai.chat.completions.create(
                     model="gpt-4o",
                     messages=[
-                        {"role": "system", "content": (
-                            "You are a skilled stock market analyst. Give:\n"
-                            "- Trend (bullish/bearish/sideways)\n"
-                            "- Entry/exit points\n"
-                            "- Patterns\n"
-                            "- Support/resistance\n"
-                            "- Risk level\n"
-                            "- Final advice (buy/sell/wait)"
-                        )},
+                        {"role": "system", "content": "You are a stock market expert. Give detailed insights."},
                         {"role": "user", "content": [
                             {"type": "text", "text": f"Analyze chart for {company_name} (₹{price})."},
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}}
@@ -225,10 +165,9 @@ def whatsapp_bot():
                     ],
                     max_tokens=300
                 )
-
                 ai_reply = chat_response.choices[0].message.content.strip()
-                msg = response.message(f"📈 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
+                msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
+                msg.media(f"https://your-domain/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
@@ -237,7 +176,7 @@ def whatsapp_bot():
         user_states[sender] = "initial"
     else:
         if user_state == "stock_mode":
-            response.message("❌ Stock not found. Try a valid symbol or company name.")
+            response.message("❌ Stock not found. Try a valid symbol or name.")
         else:
             response.message("❌ Invalid input. Type 'Hi' to restart.")
 
@@ -246,6 +185,11 @@ def whatsapp_bot():
 @app.route("/static/<path:filename>")
 def serve_static(filename):
     return send_from_directory("static", filename)
+
+@app.route("/add_user/<mobile>/<email>/<longname>")
+def add_test_user(mobile, email, longname):
+    add_user(mobile, email, longname)
+    return f"✅ Added user: {longname} ({mobile})"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
