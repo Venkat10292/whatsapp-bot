@@ -143,18 +143,16 @@ def whatsapp_bot():
     if symbol and company_name:
         try:
             stock = yf.Ticker(symbol + ".NS")
-            price = stock.fast_info.get("last_price", None)
-            if not price:
-                stock = yf.Ticker(symbol)
-                price = stock.fast_info.get("last_price", None)
+            hist = stock.history(period="1d", interval="1m")
+            price = hist['Close'].dropna().iloc[-1] if not hist.empty else None
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
-                hist = stock.history(period="6mo")
+                hist_full = stock.history(period="6mo")
                 if not os.path.exists("static"):
                     os.makedirs("static")
                 chart_filename = f"{symbol}_{uuid.uuid4().hex[:6]}.png"
                 chart_path = os.path.join("static", chart_filename)
-                mpf.plot(hist[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
+                mpf.plot(hist_full[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 with open(chart_path, "rb") as img_file:
                     encoded = base64.b64encode(img_file.read()).decode("utf-8")
                 chat_response = openai.chat.completions.create(
