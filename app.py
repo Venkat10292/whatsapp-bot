@@ -143,7 +143,10 @@ def whatsapp_bot():
     if symbol and company_name:
         try:
             stock = yf.Ticker(symbol + ".NS")
-            price = stock.info.get("regularMarketPrice", None)
+            price = stock.fast_info.get("last_price", None)
+            if not price:
+                stock = yf.Ticker(symbol)
+                price = stock.fast_info.get("last_price", None)
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
                 hist = stock.history(period="6mo")
@@ -171,8 +174,8 @@ def whatsapp_bot():
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
-            logging.error(f"❌ Stock error: {e}")
-            response.message("⚠️ Couldn't retrieve stock data.")
+            logging.error(f"❌ Stock error for {symbol}: {e}")
+            response.message(f"⚠️ Couldn't retrieve stock data: {e}")
         user_states[sender] = "initial"
     else:
         if user_state == "stock_mode":
