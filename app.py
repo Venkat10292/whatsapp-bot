@@ -1,5 +1,3 @@
-# app.py (with Alpha Vantage logic merged directly)
-
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
 from requests.auth import HTTPBasicAuth
@@ -28,14 +26,14 @@ init_db()
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Load OpenAI key
+# Load API Keys
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Load Alpha Vantage key
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Load CSV and build stock name dictionaries
+print("✅ Alpha Vantage API Key Loaded:", ALPHA_VANTAGE_API_KEY)
+
+# Load CSV and build stock dictionaries
 df = pd.read_csv("nse_stocks.csv")
 df.columns = df.columns.str.strip().str.upper()
 symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
@@ -62,9 +60,10 @@ def get_daily_data(symbol, output_size="compact"):
     }
     response = requests.get(BASE_URL, params=params)
     data = response.json()
+
     key = "Time Series (Daily)"
-    if key not in data:
-        raise Exception(f"Alpha Vantage error or rate limit exceeded: {data}")
+    if not data or key not in data:
+        raise Exception(f"Alpha Vantage error or rate limit exceeded. Response: {data}")
 
     df = pd.DataFrame(data[key]).T
     df.columns = [
@@ -122,7 +121,7 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🕘 Access denied. Please contact admin to get access.")
+        response.message("🚫 Access denied. Please contact admin to get access.")
         return str(response)
 
     if media_url:
@@ -143,7 +142,7 @@ def whatsapp_bot():
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message("👋 Welcome to Stock Bot!\n1⃣ Stock Analysis\n2⃣ Application Support\nType 1 or 2 to continue.")
+        response.message("👋 Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
@@ -195,7 +194,7 @@ def whatsapp_bot():
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://your-deployed-url/static/{chart_filename}")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
