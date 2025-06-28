@@ -53,7 +53,7 @@ REJECTION_SOLUTIONS = {
 def get_daily_data(symbol, output_size="compact"):
     params = {
         "function": "TIME_SERIES_DAILY_ADJUSTED",
-        "symbol": f"{symbol}.NS",
+        "symbol": symbol if "." in symbol else f"{symbol}.NS",
         "apikey": ALPHA_VANTAGE_API_KEY,
         "outputsize": output_size,
         "datatype": "json"
