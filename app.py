@@ -1,4 +1,4 @@
-# app.py
+# app.py (with Alpha Vantage logic merged directly)
 
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
@@ -19,7 +19,6 @@ import cv2
 import numpy as np
 import uuid
 from pg_db import init_db, is_user_authorized, add_user
-from alpha_vantage_api import get_daily_data
 
 app = Flask(__name__)
 
@@ -29,11 +28,12 @@ init_db()
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# DEBUG: Check if Alpha Vantage key is loaded
-print("ALPHA KEY:", os.getenv("ALPHA_VANTAGE_API_KEY"))
-
 # Load OpenAI key
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Load Alpha Vantage key
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+BASE_URL = "https://www.alphavantage.co/query"
 
 # Load CSV and build stock name dictionaries
 df = pd.read_csv("nse_stocks.csv")
@@ -51,6 +51,30 @@ REJECTION_SOLUTIONS = {
     "Assigned basket for entity account": "This stock is tied to a specific basket. Please verify your product type or consult with your broker.",
     "Check T1 holdings": "This may be a T1 settlement stock or under restrictions like BE/Z/Trade-to-Trade. Check settlement cycle or try CNC mode."
 }
+
+def get_daily_data(symbol, output_size="compact"):
+    params = {
+        "function": "TIME_SERIES_DAILY_ADJUSTED",
+        "symbol": f"{symbol}.NS",
+        "apikey": ALPHA_VANTAGE_API_KEY,
+        "outputsize": output_size,
+        "datatype": "json"
+    }
+    response = requests.get(BASE_URL, params=params)
+    data = response.json()
+    key = "Time Series (Daily)"
+    if key not in data:
+        raise Exception(f"Alpha Vantage error or rate limit exceeded: {data}")
+
+    df = pd.DataFrame(data[key]).T
+    df.columns = [
+        "Open", "High", "Low", "Close", "Adjusted Close",
+        "Volume", "Dividend Amount", "Split Coefficient"
+    ]
+    df = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+    df.index = pd.to_datetime(df.index)
+    df.sort_index(inplace=True)
+    return df
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
@@ -98,7 +122,7 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🛘 Access denied. Please contact admin to get access.")
+        response.message("🕘 Access denied. Please contact admin to get access.")
         return str(response)
 
     if media_url:
@@ -119,7 +143,7 @@ def whatsapp_bot():
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message("👋 Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
+        response.message("👋 Welcome to Stock Bot!\n1⃣ Stock Analysis\n2⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
@@ -171,7 +195,7 @@ def whatsapp_bot():
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
+                msg.media(f"https://your-deployed-url/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
