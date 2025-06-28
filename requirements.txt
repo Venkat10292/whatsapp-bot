@@ -1,6 +1,5 @@
 Flask==3.0.3
 twilio==9.0.1
-yfinance==0.2.40
 mplfinance==0.12.10b0
 pandas==2.2.2
 python-dotenv==1.0.1
