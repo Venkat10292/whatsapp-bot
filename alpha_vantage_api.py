@@ -14,7 +14,7 @@ def get_intraday_data(symbol, interval="1min", output_size="compact"):
     """
     params = {
         "function": "TIME_SERIES_INTRADAY",
-        "symbol": f"{symbol}.BSE",
+        "symbol": f"{symbol}.NS",
         "interval": interval,
         "apikey": ALPHA_VANTAGE_API_KEY,
         "outputsize": output_size,
