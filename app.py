@@ -1,3 +1,5 @@
+# app.py
+
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
 from requests.auth import HTTPBasicAuth
@@ -26,6 +28,9 @@ init_db()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# DEBUG: Check if Alpha Vantage key is loaded
+print("ALPHA KEY:", os.getenv("ALPHA_VANTAGE_API_KEY"))
 
 # Load OpenAI key
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -93,7 +98,7 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🚫 Access denied. Please contact admin to get access.")
+        response.message("🛘 Access denied. Please contact admin to get access.")
         return str(response)
 
     if media_url:
@@ -166,7 +171,7 @@ def whatsapp_bot():
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://your-domain/static/{chart_filename}")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
