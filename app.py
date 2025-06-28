@@ -3,7 +3,6 @@ from twilio.twiml.messaging_response import MessagingResponse
 from requests.auth import HTTPBasicAuth
 import pandas as pd
 from difflib import get_close_matches
-import yfinance as yf
 import mplfinance as mpf
 import os
 import logging
@@ -18,6 +17,7 @@ import cv2
 import numpy as np
 import uuid
 from pg_db import init_db, is_user_authorized, add_user
+from alpha_vantage_api import get_daily_data
 
 app = Flask(__name__)
 
@@ -142,12 +142,10 @@ def whatsapp_bot():
 
     if symbol and company_name:
         try:
-            stock = yf.Ticker(symbol + ".NS")
-            hist = stock.history(period="1d", interval="1m")
-            price = hist['Close'].dropna().iloc[-1] if not hist.empty else None
+            hist_full = get_daily_data(symbol)
+            price = hist_full['Close'].iloc[-1]
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
-                hist_full = stock.history(period="6mo")
                 if not os.path.exists("static"):
                     os.makedirs("static")
                 chart_filename = f"{symbol}_{uuid.uuid4().hex[:6]}.png"
