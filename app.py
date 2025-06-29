@@ -18,7 +18,7 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-from angel_one.smartapi import SmartConnect
+from SmartApi.smartConnect import SmartConnect  # Corrected import
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -30,12 +30,13 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 angel_api_key = os.getenv("ANGEL_API_KEY")
 angel_client_id = os.getenv("ANGEL_CLIENT_ID")
 angel_pin = os.getenv("ANGEL_PIN")
-angel_totp = os.getenv("ANGEL_TOTP") 
+angel_totp = os.getenv("ANGEL_TOTP")
 
-totp = pyotp.TOTP(angel_totp).now()  
+# Authenticate with Angel One
+totp = pyotp.TOTP(angel_totp).now()
 smart = SmartConnect(api_key=angel_api_key)
 try:
-    smart.generate_session(client_id=angel_client_id, pin=angel_pin, totp=totp)
+    smart.generateSession(angel_client_id, angel_pin, totp)
 except Exception as e:
     logging.error("Angel login failed: %s", str(e))
 
@@ -58,27 +59,25 @@ REJECTION_SOLUTIONS = {
 }
 
 def get_angel_daily_data(symbol):
-    try:
-        token_row = df[df['symbol'].str.upper() == symbol.upper()].iloc[0]
-        token = str(token_row['token'])
-        to_date = datetime.now()
-        from_date = to_date - timedelta(days=180)
-        response = smart.get_candle_data(
-            interval="ONE_DAY",
-            from_date=from_date.strftime('%Y-%m-%d %H:%M'),
-            to_date=to_date.strftime('%Y-%m-%d %H:%M'),
-            symboltoken=token,
-            exchange="NSE"
-        )
-        candles = response.get("data", [])
-        if not candles:
-            raise ValueError("No candle data returned")
-        df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
-        df_candle['date'] = pd.to_datetime(df_candle['date'])
-        df_candle.set_index('date', inplace=True)
-        return df_candle
-    except Exception as e:
-        raise RuntimeError(f"Error fetching candle data: {e}")
+    token_row = df[df['symbol'].str.upper() == symbol.upper()].iloc[0]
+    token = str(token_row['token'])
+    to_date = datetime.now()
+    from_date = to_date - timedelta(days=180)
+    params = {
+        "exchange": "NSE",
+        "symboltoken": token,
+        "interval": "ONE_DAY",
+        "fromdate": from_date.strftime('%Y-%m-%d 09:15'),
+        "todate": to_date.strftime('%Y-%m-%d 15:30')
+    }
+    response = smart.getCandleData(params)
+    candles = response.get('data', [])
+    if not isinstance(candles, list) or len(candles) == 0:
+        raise ValueError("No candle data returned")
+    df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    df_candle['date'] = pd.to_datetime(df_candle['date'])
+    df_candle.set_index('date', inplace=True)
+    return df_candle
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
@@ -122,7 +121,7 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🔝 Access denied. Please contact admin.")
+        response.message("🛑 Access denied. Please contact admin.")
         return str(response)
 
     if media_url:
@@ -143,7 +142,7 @@ def whatsapp_bot():
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message("Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
+        response.message("Welcome to Stock Bot!\n1⃣ Stock Analysis\n2⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
@@ -195,7 +194,7 @@ def whatsapp_bot():
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://yourdomain.com/static/{chart_filename}")
+                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
