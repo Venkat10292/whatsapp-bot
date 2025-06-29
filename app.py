@@ -20,7 +20,21 @@ import pyotp
 from pg_db import init_db, is_user_authorized, add_user
 from SmartApi import SmartConnect
 from datetime import datetime, timedelta
+import inspect
 
+# Unset any environment proxy settings that might interfere
+os.environ.pop("http_proxy", None)
+os.environ.pop("https_proxy", None)
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("HTTPS_PROXY", None)
+
+# Patch SmartConnect to ignore unexpected 'proxies' argument if present
+from SmartApi.smartConnect import SmartConnect
+sig = inspect.signature(SmartConnect.__init__)
+if 'proxies' in sig.parameters:
+    params = [p for p in sig.parameters.values() if p.name != 'proxies']
+    SmartConnect.__init__.__signature__ = sig.replace(parameters=params)
+    
 app = Flask(__name__)
 init_db()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
