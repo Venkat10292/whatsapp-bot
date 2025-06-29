@@ -33,6 +33,8 @@ for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
 
 app = Flask(__name__)
 init_db()
+# 🔁 Keeps track of user interaction state (e.g., menu, stock_mode)
+user_states = {}
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
