@@ -21,6 +21,14 @@ from pg_db import init_db, is_user_authorized, add_user
 from SmartApi.smartConnect import SmartConnect  # Corrected import
 from datetime import datetime, timedelta
 
+original_init = SmartConnect.__init__
+
+def patched_init(self, *args, **kwargs):
+    kwargs.pop("proxies", None)  # Remove proxies if accidentally passed
+    return original_init(self, *args, **kwargs)
+
+SmartConnect.__init__ = patched_init
+
 app = Flask(__name__)
 init_db()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
