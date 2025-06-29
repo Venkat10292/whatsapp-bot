@@ -16,6 +16,7 @@ import requests
 import cv2
 import numpy as np
 import uuid
+import pyotp
 from pg_db import init_db, is_user_authorized, add_user
 from SmartApi import SmartConnect
 from datetime import datetime, timedelta
@@ -25,6 +26,8 @@ init_db()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+totp = pyotp.TOTP(angel_totp).now()
+
 angel_api_key = os.getenv("ANGEL_API_KEY")
 angel_client_id = os.getenv("ANGEL_CLIENT_ID")
 angel_pin = os.getenv("ANGEL_PIN")
@@ -32,7 +35,7 @@ angel_totp = os.getenv("ANGEL_TOTP")
 
 smart = SmartConnect(api_key=angel_api_key)
 try:
-    smart.generateSession(angel_client_id, angel_pin, angel_totp)
+    smart.generateSession(angel_client_id, angel_pin, totp)
 except Exception as e:
     logging.error("Angel login failed: %s", str(e))
 
