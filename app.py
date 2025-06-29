@@ -33,11 +33,14 @@ BASE_URL = "https://www.alphavantage.co/query"
 
 print("✅ Alpha Vantage API Key Loaded:", ALPHA_VANTAGE_API_KEY)
 
-# Load CSV and build stock dictionaries
-df = pd.read_csv("nse_stocks.csv")
-df.columns = df.columns.str.strip().str.upper()
-symbol_to_name = dict(zip(df["SYMBOL"].str.strip().str.upper(), df["NAME OF COMPANY"].str.strip()))
-name_to_symbol = dict(zip(df["NAME OF COMPANY"].str.strip().str.lower(), df["SYMBOL"].str.strip().str.upper()))
+# Load and prepare scrip master data
+df = pd.read_csv("scrip_master.csv")
+df.columns = df.columns.str.strip().str.lower()
+df["symbol_clean"] = df["symbol_clean"].str.strip().str.lower()
+
+symbol_to_name = dict(zip(df["symbol"].str.strip().str.upper(), df["name"].str.strip()))
+name_to_symbol = dict(zip(df["name"].str.strip().str.lower(), df["symbol"].str.strip().str.upper()))
+name_to_symbol.update(dict(zip(df["symbol_clean"], df["symbol"].str.strip().str.upper())))
 
 user_states = {}
 
@@ -166,7 +169,7 @@ def whatsapp_bot():
         if matches:
             matched_name = matches[0]
             symbol = name_to_symbol[matched_name]
-            company_name = matched_name.upper()
+            company_name = symbol_to_name.get(symbol, matched_name.upper())
 
     if symbol and company_name:
         try:
