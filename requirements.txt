@@ -10,4 +10,4 @@ requests==2.32.3
 numpy==1.26.4
 opencv-python-headless==4.8.0.76
 psycopg2-binary==2.9.9
-smartapi-python
+git+https://github.com/angel-one/smartapi-python.git
