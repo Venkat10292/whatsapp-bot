@@ -18,7 +18,7 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-from smartapi.smartConnect import SmartConnect
+from angel_one_smartapi import SmartConnect
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
