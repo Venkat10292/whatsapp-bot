@@ -18,17 +18,14 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-import SmartApi.smartConnect as smart_mod
+from SmartApi.smartConnect import SmartConnect
 from datetime import datetime, timedelta
 
-original_init = smart_mod.SmartConnect.__init__
-
-def patched_init(self, *args, **kwargs):
-    kwargs.pop("proxies", None)  # Remove proxies if passed
-    return original_init(self, *args, **kwargs)
-
-smart_mod.SmartConnect.__init__ = patched_init
-SmartConnect = smart_mod.SmartConnect
+_original_init = SmartConnect.__init__
+def _patched_init(self, *args, **kwargs):
+    kwargs.pop("proxies", None)
+    return _original_init(self, *args, **kwargs)
+SmartConnect.__init__ = _patched_init
 
 app = Flask(__name__)
 init_db()
