@@ -14,4 +14,4 @@ pyotp==2.9.0
 logzero==1.7.0
 websocket-client==1.8.0
 pycryptodome==3.23.0
-smartapi-python==1.4.8
+smartapi-python==1.5.5
