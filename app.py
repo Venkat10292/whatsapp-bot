@@ -18,13 +18,16 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
+import monkey_patch
 from SmartApi.smartConnect import SmartConnect
 from datetime import datetime, timedelta
 
 _original_init = SmartConnect.__init__
+
 def _patched_init(self, *args, **kwargs):
     kwargs.pop("proxies", None)
     return _original_init(self, *args, **kwargs)
+
 SmartConnect.__init__ = _patched_init
 
 app = Flask(__name__)
