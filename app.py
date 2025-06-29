@@ -1,6 +1,3 @@
-# ✅ Updated Flask app.py with Angel One SmartAPI for chart data
-# Assumes you have Angel One SmartAPI client setup and `get_angel_data(symbol)` implemented.
-
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
 from requests.auth import HTTPBasicAuth
@@ -20,12 +17,24 @@ import cv2
 import numpy as np
 import uuid
 from pg_db import init_db, is_user_authorized, add_user
-from angel_one_client import get_angel_daily_data  # ✅ Your Angel One wrapper
+from smartapi import SmartConnect
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 init_db()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+angel_api_key = os.getenv("ANGEL_API_KEY")
+angel_client_id = os.getenv("ANGEL_CLIENT_ID")
+angel_pin = os.getenv("ANGEL_PIN")
+angel_totp = os.getenv("ANGEL_TOTP")
+
+smart = SmartConnect(api_key=angel_api_key)
+try:
+    smart.generateSession(angel_client_id, angel_pin, angel_totp)
+except Exception as e:
+    logging.error("Angel login failed: %s", str(e))
 
 # Load and prepare scrip master data
 df = pd.read_csv("scrip_master.csv")
@@ -44,6 +53,25 @@ REJECTION_SOLUTIONS = {
     "Assigned basket for entity account": "This stock is tied to a specific basket...",
     "Check T1 holdings": "This may be a T1 settlement stock or under restrictions..."
 }
+
+def get_angel_daily_data(symbol):
+    token_row = df[df['symbol'].str.upper() == symbol.upper()].iloc[0]
+    token = str(token_row['token'])
+    to_date = datetime.now()
+    from_date = to_date - timedelta(days=180)
+    params = {
+        "exchange": "NSE",
+        "symboltoken": token,
+        "interval": "ONE_DAY",
+        "fromdate": from_date.strftime('%Y-%m-%d 09:15'),
+        "todate": to_date.strftime('%Y-%m-%d 15:30')
+    }
+    response = smart.getCandleData(params)
+    candles = response['data']
+    df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    df_candle['date'] = pd.to_datetime(df_candle['date'])
+    df_candle.set_index('date', inplace=True)
+    return df_candle
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
@@ -136,7 +164,7 @@ def whatsapp_bot():
 
     if symbol and company_name:
         try:
-            hist_full = get_angel_daily_data(symbol)  # ✅ Your SmartAPI function here
+            hist_full = get_angel_daily_data(symbol)
             price = hist_full['Close'].iloc[-1]
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
