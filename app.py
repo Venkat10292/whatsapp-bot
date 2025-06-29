@@ -18,8 +18,7 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-import monkey_patch
-from SmartApi.smartConnect import SmartConnect
+from SmartApi import SmartConnect
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -27,27 +26,24 @@ init_db()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Get Angel One credentials from environment
+# Angel One credentials from environment
 angel_api_key = os.getenv("ANGEL_API_KEY")
 angel_client_id = os.getenv("ANGEL_CLIENT_ID")
 angel_pin = os.getenv("ANGEL_PIN")
 angel_totp = os.getenv("ANGEL_TOTP")
 
-os.environ.pop("http_proxy", None)
-os.environ.pop("https_proxy", None)
-os.environ.pop("HTTP_PROXY", None)
-os.environ.pop("HTTPS_PROXY", None)
-
-# Authenticate with Angel One
+# Authenticate
 totp = pyotp.TOTP(angel_totp).now()
 smart = SmartConnect(api_key=angel_api_key)
 
 try:
-    smart.generateSession(angel_client_id, angel_pin, totp)
+    login_data = smart.generateSession(angel_client_id, angel_pin, totp)
+    if not login_data.get("data"):
+        logging.error("Angel login failed. Response: %s", login_data)
 except Exception as e:
-    logging.error("Angel login failed: %s", str(e))
+    logging.error("Angel login error: %s", str(e))
 
-# Load and prepare scrip master data
+# Scrip master data
 df = pd.read_csv("scrip_master.csv")
 df.columns = df.columns.str.strip().str.lower()
 df["symbol_clean"] = df["symbol_clean"].str.strip().str.lower()
