@@ -192,6 +192,8 @@ def whatsapp_bot():
                 if not os.path.exists("static"):
                     os.makedirs("static")
                 chart_filename = f"{symbol}_{uuid.uuid4().hex[:6]}.png"
+                chart_url = f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}"
+                logging.info(f"📊 Chart URL: {chart_url}")
                 chart_path = os.path.join("static", chart_filename)
                 mpf.plot(hist_full[-120:], type='candle', style='yahoo', title=symbol, volume=True, savefig=chart_path)
                 with open(chart_path, "rb") as img_file:
@@ -208,8 +210,8 @@ def whatsapp_bot():
                     max_tokens=300
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
-                msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
+                msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}\n🖼 Chart: {chart_url}")
+                msg.media(chart_url)
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
