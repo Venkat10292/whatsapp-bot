@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import uuid
 from pg_db import init_db, is_user_authorized, add_user
-from smartapi import SmartConnect
+from SmartApi import SmartConnect
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
