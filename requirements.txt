@@ -14,6 +14,4 @@ pyotp==2.9.0
 logzero==1.7.0
 websocket-client==1.8.0
 pycryptodome==3.23.0
-
-# Use the new Angel One SDK from GitHub directly (latest stable)
-git+https://github.com/angel-one/angel-one-smartapi-python.git
+smartapi-python==1.4.8
