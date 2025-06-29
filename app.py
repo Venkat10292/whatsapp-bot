@@ -30,10 +30,9 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 angel_api_key = os.getenv("ANGEL_API_KEY")
 angel_client_id = os.getenv("ANGEL_CLIENT_ID")
 angel_pin = os.getenv("ANGEL_PIN")
-angel_totp = os.getenv("ANGEL_TOTP")
+angel_totp = os.getenv("ANGEL_TOTP") 
 
-# Generate TOTP and login to SmartAPI
-totp = pyotp.TOTP(angel_totp).now()
+totp = pyotp.TOTP(angel_totp).now()  
 smart = SmartConnect(api_key=angel_api_key)
 try:
     smart.generateSession(angel_client_id, angel_pin, totp)
