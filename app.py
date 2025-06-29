@@ -1,3 +1,6 @@
+# ✅ Updated Flask app.py with Angel One SmartAPI for chart data
+# Assumes you have Angel One SmartAPI client setup and `get_angel_data(symbol)` implemented.
+
 from flask import Flask, request, send_from_directory
 from twilio.twiml.messaging_response import MessagingResponse
 from requests.auth import HTTPBasicAuth
@@ -17,66 +20,30 @@ import cv2
 import numpy as np
 import uuid
 from pg_db import init_db, is_user_authorized, add_user
+from angel_one_client import get_angel_daily_data  # ✅ Your Angel One wrapper
 
 app = Flask(__name__)
-
-# Initialize DB
 init_db()
-
-# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Load API Keys
 openai.api_key = os.getenv("OPENAI_API_KEY")
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-BASE_URL = "https://www.alphavantage.co/query"
-
-print("✅ Alpha Vantage API Key Loaded:", ALPHA_VANTAGE_API_KEY)
 
 # Load and prepare scrip master data
 df = pd.read_csv("scrip_master.csv")
 df.columns = df.columns.str.strip().str.lower()
 df["symbol_clean"] = df["symbol_clean"].str.strip().str.lower()
-
 symbol_to_name = dict(zip(df["symbol"].str.strip().str.upper(), df["name"].str.strip()))
 name_to_symbol = dict(zip(df["name"].str.strip().str.lower(), df["symbol"].str.strip().str.upper()))
 name_to_symbol.update(dict(zip(df["symbol_clean"], df["symbol"].str.strip().str.upper())))
-
 user_states = {}
 
 REJECTION_SOLUTIONS = {
-    "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock. Try reducing your MTF exposure or placing a CNC order instead.",
-    "Security is not allowed to trade in this market": "This security is restricted. Try trading it on a different exchange or contact support.",
-    "No holdings present": "You are trying to sell a stock you don't currently hold. Check your demat holdings before retrying.",
-    "Only board lot market orders are allowed": "Try placing your order in market lot size or convert it to a market order.",
-    "Assigned basket for entity account": "This stock is tied to a specific basket. Please verify your product type or consult with your broker.",
-    "Check T1 holdings": "This may be a T1 settlement stock or under restrictions like BE/Z/Trade-to-Trade. Check settlement cycle or try CNC mode."
+    "MTF Scripwise exposure breached": "You’ve hit the MTF limit for this stock...",
+    "Security is not allowed to trade in this market": "This security is restricted...",
+    "No holdings present": "You are trying to sell a stock you don't currently hold...",
+    "Only board lot market orders are allowed": "Try placing your order in market lot size...",
+    "Assigned basket for entity account": "This stock is tied to a specific basket...",
+    "Check T1 holdings": "This may be a T1 settlement stock or under restrictions..."
 }
-
-def get_daily_data(symbol, output_size="compact"):
-    params = {
-        "function": "TIME_SERIES_DAILY_ADJUSTED",
-        "symbol": symbol if "." in symbol else f"{symbol}.NS",
-        "apikey": ALPHA_VANTAGE_API_KEY,
-        "outputsize": output_size,
-        "datatype": "json"
-    }
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-
-    key = "Time Series (Daily)"
-    if not data or key not in data:
-        raise Exception(f"Alpha Vantage error or rate limit exceeded. Response: {data}")
-
-    df = pd.DataFrame(data[key]).T
-    df.columns = [
-        "Open", "High", "Low", "Close", "Adjusted Close",
-        "Volume", "Dividend Amount", "Split Coefficient"
-    ]
-    df = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
-    df.index = pd.to_datetime(df.index)
-    df.sort_index(inplace=True)
-    return df
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
@@ -95,7 +62,7 @@ def detect_reason_with_fuzzy(text):
             matches = get_close_matches(reason.lower(), [line.lower()], n=1, cutoff=0.5)
             if matches:
                 return reason, REJECTION_SOLUTIONS[reason]
-    return None, "We couldn’t match the reason to known issues. Please contact support."
+    return None, "We couldn’t match the reason. Please contact support."
 
 def extract_rejection_reason(image_path):
     processed_path = preprocess_image_for_ocr(image_path)
@@ -104,10 +71,7 @@ def extract_rejection_reason(image_path):
     return detect_reason_with_fuzzy(text)
 
 def is_authorized(sender):
-    if sender.startswith("whatsapp:"):
-        sender = sender.replace("whatsapp:", "").strip()
-    if sender.startswith("+91"):
-        sender = sender[3:]
+    sender = sender.replace("whatsapp:", "").strip().replace("+91", "")
     return is_user_authorized(sender)
 
 @app.route("/")
@@ -120,11 +84,10 @@ def whatsapp_bot():
     user_msg = request.form.get("Body", "").strip()
     media_url = request.form.get("MediaUrl0")
     user_state = user_states.get(sender, "initial")
-
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🚫 Access denied. Please contact admin to get access.")
+        response.message("🛑 Access denied. Please contact admin.")
         return str(response)
 
     if media_url:
@@ -137,15 +100,15 @@ def whatsapp_bot():
                 reason, solution = extract_rejection_reason(temp_path)
                 response.message(f"❌ *Reason:* {reason}\n*Solution:* {solution}")
             else:
-                response.message("⚠️ Couldn't fetch the image. Please try again.")
+                response.message("⚠️ Couldn't fetch the image. Try again.")
             user_states[sender] = "initial"
             return str(response)
         else:
-            response.message("📸 Image received. To analyze rejection, type '2' first.")
+            response.message("📸 Image received. Type '2' first for rejection support.")
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message("👋 Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
+        response.message("Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
@@ -157,7 +120,7 @@ def whatsapp_bot():
             response.message("📷 Upload your order rejection screenshot.")
             user_states[sender] = "awaiting_rejection_image"
         else:
-            response.message("❗ Please reply with 1 or 2.")
+            response.message("Please reply with 1 or 2.")
         return str(response)
 
     symbol, company_name = None, None
@@ -173,7 +136,7 @@ def whatsapp_bot():
 
     if symbol and company_name:
         try:
-            hist_full = get_daily_data(symbol)
+            hist_full = get_angel_daily_data(symbol)  # ✅ Your SmartAPI function here
             price = hist_full['Close'].iloc[-1]
             if price:
                 response.message(f"📈 {company_name} ({symbol}): ₹{price}\nGenerating chart...")
@@ -206,7 +169,7 @@ def whatsapp_bot():
         user_states[sender] = "initial"
     else:
         if user_state == "stock_mode":
-            response.message("❌ Stock not found. Try a valid symbol or name.")
+            response.message("❌ Stock not found. Try valid symbol or name.")
         else:
             response.message("❌ Invalid input. Type 'Hi' to restart.")
 
