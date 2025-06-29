@@ -66,10 +66,10 @@ def get_angel_daily_data(symbol):
         "exchange": "NSE",
         "symboltoken": token,
         "interval": "ONE_DAY",
-        "fromdate": from_date.strftime('%Y-%m-%d 09:15'),
-        "todate": to_date.strftime('%Y-%m-%d 15:30')
+        "fromdate": "2025-01-01 09:15",
+        "todate": "2025-06-29 15:30"
     }
-    response = smart.get_candle_data(params)
+    response = smart.getCandleData(params)
     candles = response['data']
     df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df_candle['date'] = pd.to_datetime(df_candle['date'])
