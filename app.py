@@ -18,7 +18,7 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-from SmartApi.smartConnect import SmartConnect
+from angel_one import SmartConnect
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -30,24 +30,16 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 angel_api_key = os.getenv("ANGEL_API_KEY")
 angel_client_id = os.getenv("ANGEL_CLIENT_ID")
 angel_pin = os.getenv("ANGEL_PIN")
-angel_totp = os.getenv("ANGEL_TOTP")
+angel_totp = os.getenv("ANGEL_TOTP") 
 
-# Ensure angel_totp is not None before using
-if not angel_totp:
-    raise ValueError("Environment variable ANGEL_TOTP is not set")
-
-# Generate TOTP and create SmartConnect session
-totp = pyotp.TOTP(angel_totp).now()
+totp = pyotp.TOTP(angel_totp).now()  
 smart = SmartConnect(api_key=angel_api_key)
 try:
-    smart.generateSession(angel_client_id, angel_pin, totp)
+    smart.generate_session(client_id=angel_client_id, pin=angel_pin, totp=totp)
 except Exception as e:
     logging.error("Angel login failed: %s", str(e))
 
 # Load and prepare scrip master data
-if not os.path.exists("scrip_master.csv"):
-    raise FileNotFoundError("scrip_master.csv file is missing")
-
 df = pd.read_csv("scrip_master.csv")
 df.columns = df.columns.str.strip().str.lower()
 df["symbol_clean"] = df["symbol_clean"].str.strip().str.lower()
@@ -77,7 +69,7 @@ def get_angel_daily_data(symbol):
         "fromdate": from_date.strftime('%Y-%m-%d 09:15'),
         "todate": to_date.strftime('%Y-%m-%d 15:30')
     }
-    response = smart.getCandleData(params)
+    response = smart.get_candle_data(params)
     candles = response['data']
     df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df_candle['date'] = pd.to_datetime(df_candle['date'])
@@ -147,7 +139,7 @@ def whatsapp_bot():
             return str(response)
 
     if user_msg.lower() in ["hi", "hello"]:
-        response.message("Welcome to Stock Bot!\n1⃣ Stock Analysis\n2⃣ Application Support\nType 1 or 2 to continue.")
+        response.message("Welcome to Stock Bot!\n1️⃣ Stock Analysis\n2️⃣ Application Support\nType 1 or 2 to continue.")
         user_states[sender] = "menu"
         return str(response)
 
