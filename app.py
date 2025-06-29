@@ -18,7 +18,7 @@ import numpy as np
 import uuid
 import pyotp
 from pg_db import init_db, is_user_authorized, add_user
-from SmartApi import SmartConnect
+from angel_one.smartapi import SmartConnect
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -58,23 +58,27 @@ REJECTION_SOLUTIONS = {
 }
 
 def get_angel_daily_data(symbol):
-    token_row = df[df['symbol'].str.upper() == symbol.upper()].iloc[0]
-    token = str(token_row['token'])
-    to_date = datetime.now()
-    from_date = to_date - timedelta(days=180)
-    params = {
-        "exchange": "NSE",
-        "symboltoken": token,
-        "interval": "ONE_DAY",
-        "fromdate": "2025-01-01 09:15",
-        "todate": "2025-06-29 15:30"
-    }
-    response = smart.getCandleData(params)
-    candles = response['data']
-    df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
-    df_candle['date'] = pd.to_datetime(df_candle['date'])
-    df_candle.set_index('date', inplace=True)
-    return df_candle
+    try:
+        token_row = df[df['symbol'].str.upper() == symbol.upper()].iloc[0]
+        token = str(token_row['token'])
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=180)
+        response = smart.get_candle_data(
+            interval="ONE_DAY",
+            from_date=from_date.strftime('%Y-%m-%d %H:%M'),
+            to_date=to_date.strftime('%Y-%m-%d %H:%M'),
+            symboltoken=token,
+            exchange="NSE"
+        )
+        candles = response.get("data", [])
+        if not candles:
+            raise ValueError("No candle data returned")
+        df_candle = pd.DataFrame(candles, columns=['date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+        df_candle['date'] = pd.to_datetime(df_candle['date'])
+        df_candle.set_index('date', inplace=True)
+        return df_candle
+    except Exception as e:
+        raise RuntimeError(f"Error fetching candle data: {e}")
 
 def preprocess_image_for_ocr(img_path):
     img = cv2.imread(img_path)
@@ -118,7 +122,7 @@ def whatsapp_bot():
     response = MessagingResponse()
 
     if not is_authorized(sender):
-        response.message("🛑 Access denied. Please contact admin.")
+        response.message("🔝 Access denied. Please contact admin.")
         return str(response)
 
     if media_url:
@@ -191,7 +195,7 @@ def whatsapp_bot():
                 )
                 ai_reply = chat_response.choices[0].message.content.strip()
                 msg = response.message(f"📊 {company_name} ({symbol}): ₹{price}\n\n{ai_reply}")
-                msg.media(f"https://whatsapp-bot-production-20ba.up.railway.app/static/{chart_filename}")
+                msg.media(f"https://yourdomain.com/static/{chart_filename}")
             else:
                 response.message(f"ℹ️ Found {company_name} but no market price available.")
         except Exception as e:
